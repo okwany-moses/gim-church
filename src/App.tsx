@@ -19,7 +19,7 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import { api } from './api.js';
 // @ts-ignore
-import gimkLogo from './assets/images/gimk_logo_exact_1783005596825.jpg';
+import gimkLogo from './assets/images/logo.jpg';
 import { 
   DashboardStats, 
   Member, 
