@@ -51,7 +51,7 @@ app.get('/api/stats', async (req, res) => {
       FROM attendance_sessions s
       LEFT JOIN branches b ON s.branch_id = b.id
       LEFT JOIN attendance_records r ON s.id = r.session_id
-      GROUP BY s.id
+      GROUP BY s.id, s.date, s.service_name, b.name
       ORDER BY s.date ASC
       LIMIT 10
     `);
@@ -679,7 +679,7 @@ app.get('/api/attendance/sessions', async (req, res) => {
       FROM attendance_sessions s
       LEFT JOIN branches b ON s.branch_id = b.id
       LEFT JOIN attendance_records r ON s.id = r.session_id
-      GROUP BY s.id
+      GROUP BY s.id, b.name
       ORDER BY s.date DESC
     `);
     res.json(sessions);
