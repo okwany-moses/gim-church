@@ -1,0 +1,127 @@
+@import "tailwindcss";
+
+@media print {
+  /* Hide non-printable elements */
+  header,
+  aside,
+  footer,
+  .print\:hidden,
+  button,
+  input,
+  select,
+  .no-print,
+  .action-buttons,
+  .filter-bar,
+  [role="tablist"] {
+    display: none !important;
+  }
+
+  /* Reset main layouts to fit paper */
+  body, 
+  main,
+  #root,
+  .min-h-screen {
+    background: #ffffff !important;
+    color: #000000 !important;
+    box-shadow: none !important;
+    border: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    width: 100% !important;
+    height: auto !important;
+    overflow: visible !important;
+  }
+
+  /* Ensure the specific table blocks and container are fully visible and full-width */
+  .bg-white,
+  .shadow-sm,
+  .rounded-xl {
+    box-shadow: none !important;
+    border: none !important;
+    background: #ffffff !important;
+    padding: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+
+  /* Print header visible only during printing */
+  .print-only {
+    display: block !important;
+  }
+
+  /* Style tables for optimal readability on physical paper */
+  table {
+    width: 100% !important;
+    border-collapse: collapse !important;
+    margin-top: 20px !important;
+    page-break-inside: auto !important;
+  }
+
+  tr {
+    page-break-inside: avoid !important;
+    page-break-after: auto !important;
+  }
+
+  thead {
+    display: table-header-group !important;
+    background-color: #f1f5f9 !important;
+    color: #0f172a !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  th {
+    border: 1px solid #94a3b8 !important;
+    padding: 8px 12px !important;
+    font-size: 10pt !important;
+    font-weight: bold !important;
+    text-transform: uppercase !important;
+    background-color: #f1f5f9 !important;
+  }
+
+  td {
+    border: 1px solid #cbd5e1 !important;
+    padding: 8px 12px !important;
+    font-size: 9.5pt !important;
+    color: #334155 !important;
+  }
+
+  /* Visual improvements for print stats */
+  .print-grid {
+    display: grid !important;
+    grid-template-cols: repeat(4, 1fr) !important;
+    gap: 15px !important;
+    margin-bottom: 25px !important;
+  }
+
+  .print-stat-card {
+    border: 1px solid #cbd5e1 !important;
+    padding: 12px !important;
+    border-radius: 4px !important;
+    text-align: center !important;
+    background: #f8fafc !important;
+  }
+
+  .print-title {
+    font-size: 20pt !important;
+    font-weight: 800 !important;
+    color: #1e3a8a !important;
+    text-align: center !important;
+    margin-bottom: 5px !important;
+  }
+
+  .print-subtitle {
+    font-size: 10pt !important;
+    color: #64748b !important;
+    text-align: center !important;
+    margin-bottom: 25px !important;
+    border-bottom: 2px solid #1e3a8a !important;
+    padding-bottom: 10px !important;
+  }
+}
+
+/* Hidden by default on screen */
+.print-only {
+  display: none;
+}
+

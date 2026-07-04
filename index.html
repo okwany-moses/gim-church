@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <script>
+      (function() {
+        function isBenignWebsocketError(event) {
+          var reason = '';
+          if (event && event.reason) {
+            reason = event.reason.message || String(event.reason);
+          } else if (event && event.message) {
+            reason = event.message;
+          } else if (event && event.error) {
+            reason = event.error.message || String(event.error);
+          }
+          
+          var reasonStr = String(reason).toLowerCase();
+          
+          if (
+            reasonStr.includes('websocket') ||
+            reasonStr.includes('failed to connect') ||
+            reasonStr.includes('hmr') ||
+            reasonStr.includes('closeevent') ||
+            reasonStr.includes('headers timeout') ||
+            reasonStr.includes('closed without opened')
+          ) {
+            return true;
+          }
+          
+          if (event && event.reason && typeof event.reason === 'object') {
+            var name = event.reason.constructor ? event.reason.constructor.name : '';
+            if (name === 'CloseEvent' || name === 'WebSocket' || name === 'ErrorEvent') {
+              return true;
+            }
+          }
+          
+          return false;
+        }
+
+        window.addEventListener('unhandledrejection', function(event) {
+          if (isBenignWebsocketError(event)) {
+            event.stopImmediatePropagation();
+            event.preventDefault();
+          }
+        }, true);
+
+        window.addEventListener('error', function(event) {
+          if (isBenignWebsocketError(event)) {
+            event.stopImmediatePropagation();
+            event.preventDefault();
+          }
+        }, true);
+      })();
+    </script>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>My Google AI Studio App</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
+

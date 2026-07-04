@@ -1,0 +1,45 @@
+# fly.toml file for GIMK Portal Backend Deployment
+
+app = "" # Leave blank; 'fly launch' or 'fly deploy' will prompt or populate this automatically
+primary_region = "ams" # Customize to your preferred region (e.g., nrt, iad, ams, etc.)
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  PORT = "3000"
+  NODE_ENV = "production"
+  DATABASE_PATH = "/data/church.db"
+
+[[mounts]]
+  source = "church_data"
+  destination = "/data"
+  initial_size = "1gb"
+
+[[services]]
+  internal_port = 3000
+  processes = ["app"]
+  protocol = "tcp"
+
+  [services.concurrency]
+    hard_limit = 25
+    soft_limit = 20
+    type = "connections"
+
+  [[services.ports]]
+    force_https = true
+    handlers = ["http"]
+    port = 80
+
+  [[services.ports]]
+    handlers = ["tls", "http"]
+    port = 443
+
+  [[services.http_checks]]
+    interval = "10s"
+    grace_period = "5s"
+    method = "get"
+    path = "/api/stats" # Healthcheck endpoint
+    protocol = "http"
+    timeout = "2s"
+    tls_skip_verify = false
