@@ -59,3 +59,17 @@ createRoot(document.getElementById('root')!).render(
   </StrictMode>,
 );
 
+// Register Service Worker for PWA installability
+if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js')
+      .then((registration) => {
+        console.log('PWA ServiceWorker registered successfully with scope: ', registration.scope);
+      })
+      .catch((error) => {
+        console.log('PWA ServiceWorker registration failed: ', error);
+      });
+  });
+}
+
+
