@@ -15,13 +15,23 @@ export interface CompatDatabase {
 class PostgresCompatDatabase implements CompatDatabase {
   private pool: pg.Pool;
 
-  constructor(connectionString: string) {
-    this.pool = new pg.Pool({
-      connectionString,
-      ssl: connectionString.includes('localhost') || connectionString.includes('127.0.0.1')
-        ? false
-        : { rejectUnauthorized: false } // Required for hosting on Neon / Supabase in production
-    });
+  constructor(config: string | { host?: string; user?: string; password?: string; database?: string }) {
+    if (typeof config === 'string') {
+      this.pool = new pg.Pool({
+        connectionString: config,
+        ssl: config.includes('localhost') || config.includes('127.0.0.1')
+          ? false
+          : { rejectUnauthorized: false } // Required for hosting on Neon / Supabase in production
+      });
+    } else {
+      this.pool = new pg.Pool({
+        host: config.host,
+        user: config.user,
+        password: config.password,
+        database: config.database,
+        connectionTimeoutMillis: 15000,
+      });
+    }
   }
 
   private translate(sql: string, params: any[]): { sql: string; params: any[] } {
@@ -118,6 +128,33 @@ let dbInstance: any = null;
 
 export async function getDb(): Promise<CompatDatabase> {
   if (dbInstance) return dbInstance;
+
+  const sqlHost = process.env.SQL_HOST;
+  const sqlUser = process.env.SQL_USER;
+  const sqlPassword = process.env.SQL_PASSWORD;
+  const sqlDbName = process.env.SQL_DB_NAME;
+
+  if (sqlHost && sqlUser && sqlPassword && sqlDbName) {
+    console.log('Cloud SQL environment detected. Connecting via connection pool...');
+    try {
+      const pgDb = new PostgresCompatDatabase({
+        host: sqlHost,
+        user: sqlUser,
+        password: sqlPassword,
+        database: sqlDbName
+      });
+      // Test connection
+      await pgDb.get('SELECT 1');
+      console.log('Connected to Cloud SQL successfully.');
+      
+      await initDb(pgDb);
+      dbInstance = pgDb;
+      return dbInstance;
+    } catch (pgErr) {
+      console.error('Failed to connect to Cloud SQL:', pgErr);
+      console.warn('Falling back to other database options...');
+    }
+  }
 
   const dbUrl = process.env.DATABASE_URL;
   if (dbUrl) {
