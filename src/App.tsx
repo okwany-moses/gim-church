@@ -47,6 +47,7 @@ import PastorDashboard from './components/PastorDashboard.js';
 import UsherDashboard from './components/UsherDashboard.js';
 import GlobalSearch from './components/GlobalSearch.js';
 import GimkAuth, { ChangePasswordModal } from './components/GimkAuth.js';
+import DatabaseMaintenance from './components/DatabaseMaintenance.js';
 
 export default function App() {
   const [currentRole, setCurrentRole] = useState<'congregant' | 'usher' | 'pastor' | 'admin'>('congregant');
@@ -480,6 +481,7 @@ export default function App() {
     { id: 'finances', label: 'Financial Ledger', icon: TrendingUp },
     { id: 'branches', label: 'Cell Groups & Branches', icon: GitBranch },
     { id: 'attendance', label: 'Attendance Rosters', icon: CheckSquare },
+    { id: 'database', label: 'Database Status', icon: Database },
   ];
 
   return (
@@ -828,6 +830,12 @@ export default function App() {
                       onGetSessionRecords={handleGetSessionRecords}
                       onDeleteSession={handleDeleteSession}
                       onBulkDeleteSessions={handleBulkDeleteSessions}
+                    />
+                  )}
+                  {activeTab === 'database' && (
+                    <DatabaseMaintenance 
+                      onRefresh={loadAllData} 
+                      showToast={(msg) => showToast(msg)} 
                     />
                   )}
                 </>

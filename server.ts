@@ -1,7 +1,7 @@
 import express from 'express';
 import path from 'path';
 import { createServer as createViteServer } from 'vite';
-import { getDb } from './server/db.js';
+import { getDb, getDbType } from './server/db.js';
 import { GoogleGenAI, Type } from '@google/genai';
 
 const app = express();
@@ -1302,6 +1302,71 @@ app.post('/api/auth/change-password', async (req, res) => {
     );
 
     res.json({ success: true });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+
+// 15. Database Status and Reset Endpoints
+app.get('/api/database/status', async (req, res) => {
+  try {
+    const type = getDbType();
+    const isPersistent = type === 'postgresql' || type === 'cloudsql';
+    let details = 'Local Ephemeral SQLite (Development / Ephemeral)';
+    if (type === 'postgresql') {
+      details = 'Production PostgreSQL Database (Persistent)';
+    } else if (type === 'cloudsql') {
+      details = 'Production Cloud SQL Instance (Persistent)';
+    }
+    res.json({
+      type,
+      persistent: isPersistent,
+      details
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/database/reset', async (req, res) => {
+  try {
+    const db = await getDb();
+    
+    // Purge tables in the correct order to respect foreign key constraints
+    await db.run('BEGIN');
+    try {
+      const tablesInOrder = [
+        'attendance_records',
+        'attendance_sessions',
+        'contributions',
+        'tasks',
+        'prayer_requests',
+        'bulk_sms',
+        'expenditures',
+        'events',
+        'sermons',
+        'hymns',
+        'system_backups',
+        'bible_chapters_cache',
+        'bible_search_cache',
+        'members',
+        'cell_groups',
+        'branches'
+      ];
+      
+      for (const table of tablesInOrder) {
+        await db.run(`DELETE FROM ${table}`);
+      }
+      await db.run('COMMIT');
+    } catch (txErr) {
+      try {
+        await db.run('ROLLBACK');
+      } catch (_) {}
+      throw txErr;
+    }
+
+    res.json({ success: true, message: 'Database reset successfully. All transactions and demo records cleared.' });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }

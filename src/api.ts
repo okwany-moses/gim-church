@@ -319,4 +319,12 @@ export const api = {
     request<{ success: boolean; results: { reference: string; text: string; theme: string }[] }>(
       `/bible/search?query=${encodeURIComponent(query)}&translation=${encodeURIComponent(translation)}`
     ),
+
+  // Database Management
+  getDatabaseStatus: () => 
+    request<{ type: 'sqlite' | 'postgresql' | 'cloudsql'; persistent: boolean; details: string }>('/database/status'),
+  resetDatabase: () => 
+    request<{ success: boolean; message: string }>('/database/reset', {
+      method: 'POST'
+    }),
 };
