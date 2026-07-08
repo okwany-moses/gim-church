@@ -181,14 +181,6 @@ async function initializeDatabase(): Promise<CompatDatabase> {
         try {
           // Grant schema permission to app user
           await adminDb.exec(`GRANT ALL ON SCHEMA public TO "${sqlUser}"`);
-          
-          // Try to run initDb as admin first to ensure tables exist
-          try {
-            console.log('Running schema initialization as admin user...');
-            await initDb(adminDb);
-          } catch (initAdminErr) {
-            console.warn('Warning: initDb as admin encountered issues, proceeding...', initAdminErr);
-          }
 
           // Grant privileges on all existing tables and sequences to app user (safely catch if none exist yet)
           try {
@@ -457,294 +449,309 @@ async function initDb(db: CompatDatabase) {
   // Wrap seeding in individual try-catch blocks to prevent any seeding conflict from aborting overall database initialization
   console.log('Running database seeding...');
 
-  // 1. system_backups
+  let alreadySeeded = false;
   try {
     const backupCount = await db.get<{ count: number }>('SELECT COUNT(*) as count FROM system_backups');
-    if (backupCount && Number(backupCount.count) === 0) {
-      await db.run("INSERT OR IGNORE INTO system_backups (id, timestamp) VALUES (1, '2026-06-30 18:45:12')");
+    if (backupCount && Number(backupCount.count) > 0) {
+      alreadySeeded = true;
+      console.log('Database already initialized and seeded. Skipping mock data generation to preserve user edits.');
+    }
+  } catch (err) {
+    // Table does not exist yet or count failed, we will proceed with seeding
+  }
+
+  // 1. system_backups
+  try {
+    if (!alreadySeeded) {
+      const backupCount = await db.get<{ count: number }>('SELECT COUNT(*) as count FROM system_backups');
+      if (backupCount && Number(backupCount.count) === 0) {
+        await db.run("INSERT OR IGNORE INTO system_backups (id, timestamp) VALUES (1, '2026-06-30 18:45:12')");
+      }
     }
   } catch (err) {
     console.error('Seeding system_backups failed:', err);
   }
 
-  // 2. tasks
-  try {
-    const taskCount = await db.get<{ count: number }>('SELECT COUNT(*) as count FROM tasks');
-    if (taskCount && Number(taskCount.count) === 0) {
-      await db.run(`INSERT OR IGNORE INTO tasks (id, title, description, assigned_to, due_date, status, category) VALUES 
-        (1, 'Setup Sound System for Crusade', 'Coordinate with the HQ tech team to test all wireless microphones, audio mixer, and outdoor speakers.', 'Emmanuel Ochieng', '2026-07-09', 'Pending', 'Event'),
-        (2, 'HQ Sanctuary Roof Inspection', 'Inspect the main sanctuary metal sheets for leakages before the July rains begin.', 'Elder Moses Okwany', '2026-07-05', 'In Progress', 'Facility'),
-        (3, 'Prepare Financial Statement Q2', 'Compile all tithes, offerings, and administrative expenses from the four regional branches.', 'Jane Awuor', '2026-07-15', 'Pending', 'Administration'),
-        (4, 'Repair Guest House Lighting', 'Replace blown bulbs and rewire the switches in the guest rooms.', 'Silas Owino', '2026-06-29', 'Completed', 'Facility')
-      `);
-    }
-  } catch (err) {
-    console.error('Seeding tasks failed:', err);
-  }
-
-  // 3. branches
-  try {
-    const branchCount = await db.get<{ count: number }>('SELECT COUNT(*) as count FROM branches');
-    if (branchCount && Number(branchCount.count) === 0) {
-      await db.run(`INSERT OR IGNORE INTO branches (id, name, location, pastor, date_opened) VALUES 
-        (1, 'GIMK Headquarters (Ramba-Kabondo)', 'Ramba, Kabondo, Homa Bay County', 'Rev. Dr. Jared Okwany', '2010-04-12'),
-        (2, 'GIMK Nairobi Branch', 'Kawangware, Nairobi', 'Pastor Benson Ochieng', '2015-08-20'),
-        (3, 'GIMK Kisumu Branch', 'Nyalenda, Kisumu', 'Pastor Mary Atieno', '2018-02-15'),
-        (4, 'GIMK Homa Bay Branch', 'Homa Bay Town, Homa Bay', 'Pastor Silas Owino', '2021-11-05')
-      `);
-    }
-  } catch (err) {
-    console.error('Seeding branches failed:', err);
-  }
-
-  // 4. cell_groups
-  try {
-    const cellCount = await db.get<{ count: number }>('SELECT COUNT(*) as count FROM cell_groups');
-    if (cellCount && Number(cellCount.count) === 0) {
-      await db.run(`INSERT OR IGNORE INTO cell_groups (id, name, leader, meeting_details, branch_id) VALUES
-        (1, 'Ramba Grace Fellowship', 'Elder Moses Okwany', 'Tuesdays 5:30 PM - Ramba Village', 1),
-        (2, 'Kabondo Light Fellowship', 'Deaconess Jane Awuor', 'Thursdays 6:00 PM - Kabondo Center', 1),
-        (3, 'Kawangware Hope Cell', 'Bro. Kevin Wafula', 'Wednesdays 6:30 PM - Kawangware Area 56', 2),
-        (4, 'Nyalenda Victory Group', 'Sister Grace Akinyi', 'Fridays 5:00 PM - Nyalenda B', 3),
-        (5, 'Homa Bay Town Fellowship', 'Elder Collins Omondi', 'Tuesdays 6:00 PM - Sofia Estate', 4)
-      `);
-    }
-  } catch (err) {
-    console.error('Seeding cell_groups failed:', err);
-  }
-
-  // 5. members
-  try {
-    const memberCount = await db.get<{ count: number }>('SELECT COUNT(*) as count FROM members');
-    if (memberCount && Number(memberCount.count) === 0) {
-      await db.run(`INSERT OR IGNORE INTO members (id, name, contact, join_date, status, gender, family_role, birth_date, branch_id, cell_group_id) VALUES
-        (1, 'Elder Moses Okwany', '+254712345678', '2010-05-01', 'Active', 'Male', 'Father', '1978-04-15', 1, 1),
-        (2, 'Jane Awuor', '+254722222333', '2011-02-14', 'Active', 'Female', 'Mother', '1982-08-22', 1, 2),
-        (3, 'Collins Omondi', '+254733333444', '2021-12-01', 'Active', 'Male', 'Father', '1985-11-12', 4, 5),
-        (4, 'Mary Atieno', '+254744444555', '2018-02-15', 'Active', 'Female', 'Mother', '1975-01-30', 3, 4),
-        (5, 'Silas Owino', '+254755555666', '2021-11-05', 'Active', 'Male', 'Father', '1980-06-18', 4, 5),
-        (6, 'Emmanuel Ochieng', '+254766666777', '2012-06-10', 'Active', 'Male', 'Youth', '1998-09-05', 1, 1),
-        (7, 'Grace Akinyi', '+254777777888', '2018-03-01', 'Active', 'Female', 'Single', '1990-12-25', 3, 4),
-        (8, 'Kevin Wafula', '+254788888999', '2015-09-01', 'Active', 'Male', 'Father', '1983-03-14', 2, 3),
-        (9, 'Beatrice Adhiambo', '+254799999000', '2022-01-15', 'Active', 'Female', 'Youth', '2001-05-20', 1, 2),
-        (10, 'Benson Ochieng', '+254711122233', '2015-08-20', 'Active', 'Male', 'Father', '1976-10-10', 2, 3),
-        (11, 'David Kiprop', '+254722233344', '2023-04-10', 'Visitor', 'Male', 'Single', '1995-07-08', 1, NULL),
-        (12, 'Sarah Cherono', '+254733344455', '2024-01-18', 'Visitor', 'Female', 'Youth', '2002-11-30', 2, NULL)
-      `);
-    }
-  } catch (err) {
-    console.error('Seeding members failed:', err);
-  }
-
-  // 6. contributions
-  try {
-    const contrCount = await db.get<{ count: number }>('SELECT COUNT(*) as count FROM contributions');
-    if (contrCount && Number(contrCount.count) === 0) {
-      await db.run(`INSERT OR IGNORE INTO contributions (id, member_id, member_name, amount, type, date, payment_method) VALUES
-        (1, 1, 'Elder Moses Okwany', 5000, 'Tithe', '2026-06-01', 'M-Pesa'),
-        (2, 2, 'Jane Awuor', 3500, 'Tithe', '2026-06-02', 'M-Pesa'),
-        (3, 6, 'Emmanuel Ochieng', 1000, 'Offering', '2026-06-07', 'Cash'),
-        (4, 8, 'Kevin Wafula', 4500, 'Tithe', '2026-06-05', 'Bank Transfer'),
-        (5, NULL, 'Anonymous', 25000, 'Building Fund', '2026-06-07', 'Bank Transfer'),
-        (6, 1, 'Elder Moses Okwany', 2000, 'Missions', '2026-06-14', 'M-Pesa'),
-        (7, 3, 'Collins Omondi', 3000, 'Tithe', '2026-06-15', 'M-Pesa'),
-        (8, 4, 'Mary Atieno', 4000, 'Tithe', '2026-06-15', 'M-Pesa'),
-        (9, 9, 'Beatrice Adhiambo', 500, 'Offering', '2026-06-21', 'Cash'),
-        (10, NULL, 'Anonymous Walk-In', 12500, 'Offering', '2026-06-21', 'Cash'),
-        (11, 1, 'Elder Moses Okwany', 6000, 'Tithe', '2026-06-28', 'M-Pesa'),
-        (12, 2, 'Jane Awuor', 3500, 'Tithe', '2026-06-28', 'M-Pesa')
-      `);
-    }
-  } catch (err) {
-    console.error('Seeding contributions failed:', err);
-  }
-
-  // 7. expenditures
-  try {
-    const expCount = await db.get<{ count: number }>('SELECT COUNT(*) as count FROM expenditures');
-    if (expCount && Number(expCount.count) === 0) {
-      await db.run(`INSERT OR IGNORE INTO expenditures (id, category, amount, date, description) VALUES
-        (1, 'Salaries', 30000, '2026-06-25', 'Monthly allowance for local pastors & staff'),
-        (2, 'Utilities', 4500, '2026-06-10', 'HQ Electricity and water bills'),
-        (3, 'Charity', 15000, '2026-06-12', 'Support for local primary school in Ramba'),
-        (4, 'Missions', 8000, '2026-06-18', 'Evangelism outreach support in Kabondo regional markets'),
-        (5, 'Maintenance', 6200, '2026-06-05', 'Repair of sound system microphones and cables'),
-        (6, 'Events', 12000, '2026-06-20', 'Catering & materials for the Annual Youth Fellowship seminar')
-      `);
-    }
-  } catch (err) {
-    console.error('Seeding expenditures failed:', err);
-  }
-
-  // 8. attendance_sessions & records
-  try {
-    const attSessCount = await db.get<{ count: number }>('SELECT COUNT(*) as count FROM attendance_sessions');
-    if (attSessCount && Number(attSessCount.count) === 0) {
-      await db.run(`INSERT OR IGNORE INTO attendance_sessions (id, date, service_name, branch_id) VALUES
-        (1, '2026-06-07', 'Sunday Main Service', 1),
-        (2, '2026-06-14', 'Sunday Main Service', 1),
-        (3, '2026-06-21', 'Sunday Main Service', 1),
-        (4, '2026-06-28', 'Sunday Main Service', 1),
-        (5, '2026-06-07', 'Sunday Main Service', 2),
-        (6, '2026-06-14', 'Sunday Main Service', 2)
-      `);
-      
-      const attRecCount = await db.get<{ count: number }>('SELECT COUNT(*) as count FROM attendance_records');
-      if (attRecCount && Number(attRecCount.count) === 0) {
-        await db.run(`INSERT OR IGNORE INTO attendance_records (id, session_id, member_id, status) VALUES
-          (1, 1, 1, 'Present'),
-          (2, 1, 2, 'Present'),
-          (3, 1, 6, 'Present'),
-          (4, 1, 9, 'Present'),
-          (5, 1, 11, 'Present'),
-          (6, 2, 1, 'Present'),
-          (7, 2, 2, 'Present'),
-          (8, 2, 6, 'Absent'),
-          (9, 2, 9, 'Present'),
-          (10, 2, 11, 'Absent'),
-          (11, 3, 1, 'Present'),
-          (12, 3, 2, 'Present'),
-          (13, 3, 6, 'Present'),
-          (14, 3, 9, 'Present'),
-          (15, 3, 11, 'Present'),
-          (16, 4, 1, 'Present'),
-          (17, 4, 2, 'Present'),
-          (18, 4, 6, 'Present'),
-          (19, 4, 9, 'Present'),
-          (20, 4, 11, 'Absent'),
-          (21, 5, 8, 'Present'),
-          (22, 5, 10, 'Present'),
-          (23, 5, 12, 'Present'),
-          (24, 6, 8, 'Present'),
-          (25, 6, 10, 'Present'),
-          (26, 6, 12, 'Absent')
+  if (!alreadySeeded) {
+    // 2. tasks
+    try {
+      const taskCount = await db.get<{ count: number }>('SELECT COUNT(*) as count FROM tasks');
+      if (taskCount && Number(taskCount.count) === 0) {
+        await db.run(`INSERT OR IGNORE INTO tasks (id, title, description, assigned_to, due_date, status, category) VALUES 
+          (1, 'Setup Sound System for Crusade', 'Coordinate with the HQ tech team to test all wireless microphones, audio mixer, and outdoor speakers.', 'Emmanuel Ochieng', '2026-07-09', 'Pending', 'Event'),
+          (2, 'HQ Sanctuary Roof Inspection', 'Inspect the main sanctuary metal sheets for leakages before the July rains begin.', 'Elder Moses Okwany', '2026-07-05', 'In Progress', 'Facility'),
+          (3, 'Prepare Financial Statement Q2', 'Compile all tithes, offerings, and administrative expenses from the four regional branches.', 'Jane Awuor', '2026-07-15', 'Pending', 'Administration'),
+          (4, 'Repair Guest House Lighting', 'Replace blown bulbs and rewire the switches in the guest rooms.', 'Silas Owino', '2026-06-29', 'Completed', 'Facility')
         `);
       }
+    } catch (err) {
+      console.error('Seeding tasks failed:', err);
     }
-  } catch (err) {
-    console.error('Seeding attendance failed:', err);
-  }
 
-  // 9. events
-  try {
-    const eventCount = await db.get<{ count: number }>('SELECT COUNT(*) as count FROM events');
-    if (eventCount && Number(eventCount.count) === 0) {
-      await db.run(`INSERT OR IGNORE INTO events (id, title, description, date, location) VALUES
-        (1, 'Annual Revival & Healing Crusade', 'A powerful 3-day spiritual gathering with guest speakers from all over East Africa.', '2026-07-10', 'GIMK HQ Grounds, Ramba-Kabondo'),
-        (2, 'Regional Youth Empowerment Seminar', 'Mentorship session on entrepreneurship, career growth, and Christian integrity.', '2026-07-18', 'Nairobi Kawangware Branch'),
-        (3, 'All-Cell Fellowship Open Day', 'Joint prayer and worship meeting followed by fellowship meals with all regional cell members.', '2026-08-01', 'GIMK HQ Church Hall, Ramba')
-      `);
+    // 3. branches
+    try {
+      const branchCount = await db.get<{ count: number }>('SELECT COUNT(*) as count FROM branches');
+      if (branchCount && Number(branchCount.count) === 0) {
+        await db.run(`INSERT OR IGNORE INTO branches (id, name, location, pastor, date_opened) VALUES 
+          (1, 'GIMK Headquarters (Ramba-Kabondo)', 'Ramba, Kabondo, Homa Bay County', 'Rev. Dr. Jared Okwany', '2010-04-12'),
+          (2, 'GIMK Nairobi Branch', 'Kawangware, Nairobi', 'Pastor Benson Ochieng', '2015-08-20'),
+          (3, 'GIMK Kisumu Branch', 'Nyalenda, Kisumu', 'Pastor Mary Atieno', '2018-02-15'),
+          (4, 'GIMK Homa Bay Branch', 'Homa Bay Town, Homa Bay', 'Pastor Silas Owino', '2021-11-05')
+        `);
+      }
+    } catch (err) {
+      console.error('Seeding branches failed:', err);
     }
-  } catch (err) {
-    console.error('Seeding events failed:', err);
-  }
 
-  // 10. sermons
-  try {
-    const sermonCount = await db.get<{ count: number }>('SELECT COUNT(*) as count FROM sermons');
-    if (sermonCount && Number(sermonCount.count) === 0) {
-      await db.run(`INSERT OR IGNORE INTO sermons (id, title, speaker, date, summary, media_url) VALUES
-        (1, 'Walking by Faith, Not by Sight', 'Rev. Dr. Jared Okwany', '2026-06-28', 'Deep exploration of Genesis 12 and the call of Abraham, encouraging believers to move forward even when the future is unseen.', 'https://www.soundclouddemo.com/gimk/sermon-2026-06-28.mp3'),
-        (2, 'The Power of a Unified Church', 'Pastor Benson Ochieng', '2026-06-21', 'Focusing on Psalm 133 and Ephesians 4, discussing how unity attracts Gods blessing and drives impactful ministry.', 'https://www.youtube.com/gimk/sermon-2026-06-21.mp4'),
-        (3, 'The Heart of True Stewardship', 'Rev. Dr. Jared Okwany', '2026-06-14', 'A sermon on Malachi 3 and 2 Corinthians 9, highlighting that giving is a matter of heart gratitude rather than mere obligation.', 'https://www.soundclouddemo.com/gimk/sermon-2026-06-14.mp3')
-      `);
+    // 4. cell_groups
+    try {
+      const cellCount = await db.get<{ count: number }>('SELECT COUNT(*) as count FROM cell_groups');
+      if (cellCount && Number(cellCount.count) === 0) {
+        await db.run(`INSERT OR IGNORE INTO cell_groups (id, name, leader, meeting_details, branch_id) VALUES
+          (1, 'Ramba Grace Fellowship', 'Elder Moses Okwany', 'Tuesdays 5:30 PM - Ramba Village', 1),
+          (2, 'Kabondo Light Fellowship', 'Deaconess Jane Awuor', 'Thursdays 6:00 PM - Kabondo Center', 1),
+          (3, 'Kawangware Hope Cell', 'Bro. Kevin Wafula', 'Wednesdays 6:30 PM - Kawangware Area 56', 2),
+          (4, 'Nyalenda Victory Group', 'Sister Grace Akinyi', 'Fridays 5:00 PM - Nyalenda B', 3),
+          (5, 'Homa Bay Town Fellowship', 'Elder Collins Omondi', 'Tuesdays 6:00 PM - Sofia Estate', 4)
+        `);
+      }
+    } catch (err) {
+      console.error('Seeding cell_groups failed:', err);
     }
-  } catch (err) {
-    console.error('Seeding sermons failed:', err);
-  }
 
-  // 11. hymns
-  try {
-    const hymnCount = await db.get<{ count: number }>('SELECT COUNT(*) as count FROM hymns');
-    if (hymnCount && Number(hymnCount.count) === 0) {
-      await db.run(`INSERT OR IGNORE INTO hymns (id, number, title, key, category, lyrics_english, lyrics_kiswahili, lyrics_luo) VALUES
-        (1, 1, 'Amazing Grace / Wema wa Ajabu / Ngono Mar Adhum', 'G', 'Grace & Salvation', 
-'Amazing grace! How sweet the sound
-That saved a wretch like me!
-I once was lost, but now am found;
-Was blind, but now I see.
-
-Through many dangers, toils and snares,
-I have already come;
-Tis grace hath brought me safe thus far,
-And grace will lead me home.',
-'Wema wa ajabu wa Mwokozi,
-Uliookoa roho yangu!
-Nilipotea nikatafutwa,
-Sasa ninaona kwa wema wake.
-
-Katika hatari na taabu nyingi,
-Nimepitishwa salama;
-Wema ndio ulioniongoza,
-Wema utanipeleka nyumbani.',
-'Ngono mar adhum makwayo richo,
-Ma neno chuny kendo duto!
-Ne alal ngang to sani ayudore,
-An ne muofni, sani aneno.
-
-Kuom sand kendo kuom masiche duto,
-Asewok maber to mabor;
-Ng''wono kenda emasegenga,
-Kendo ng''wono notera dala.'),
-
-        (2, 2, 'How Great Thou Art / Wewe ni Mkuu / En Dichuo Maduong''', 'Bf', 'Praise & Worship',
-'O Lord my God, when I in awesome wonder
-Consider all the worlds Thy hands have made,
-I see the stars, I hear the rolling thunder,
-Thy power throughout the universe displayed!
-
-Then sings my soul, my Savior God, to Thee,
-How great Thou art! How great Thou art!
-Then sings my soul, my Savior God, to Thee,
-How great Thou art! How great Thou art!',
-'Ee Bwana Mungu wangu, nikishangaa
-Kuangalia kazi za mikono yako,
-Nyota na radi zinazovuma,
-Nguvu zako kote ulimwenguni!
-
-Kisha roho yangu na ikuimbie,
-Wewe ni mkuu, jinsi gani mkuu!
-Kisha roho yangu na ikuimbie,
-Wewe ni mkuu, jinsi gani mkuu!',
-'Ee Ruoth Nyasacha, ka aparo duto
-Tije mag lwetegi masechweyo,
-Aseno sulwe, awinjo mor polo,
-Teko mari osefweny piny duto!
-
-Chunyna to wer, Ruoth Nyasacha maber,
-En dichuo maduong''! En dichuo maduong''!
-Chunyna to wer, Ruoth Nyasacha maber,
-En dichuo maduong''! En dichuo maduong''!'),
-
-        (3, 3, 'What a Friend We Have in Jesus / Rafiki wa Kweli ni Yesu / Osiep Mabye En Yesu', 'F', 'Prayer & Trust',
-'What a friend we have in Jesus,
-All our sins and griefs to bear!
-What a privilege to carry
-Everything to God in prayer!
-Oh, what peace we often forfeit,
-Oh, what needless pain we bear,
-All because we do not carry
-Everything to God in prayer!',
-'Rafiki mwema ni Yesu,
-Abebeaye dhambi zetu zote!
-Ni heri iliyoje kwetu
-Kupeleka yote kwa Mungu kwa maombi!
-Amani gani twajikosesha,
-Maumivu gani ya bure twabeba,
-Yote kwa sababu hatupeleki
-Kila kitu kwa Mungu kwa maombi!',
-'Osiep maber maradiri en Yesu,
-Mating''o richo kendo parruokwa duto!
-En heri maduong'' malich nwa
-Kwalo wechewa duto ne Nyasaye!
-O, kuwe maduong'' ma wapendorego,
-Kendo chunywa thagore nono,
-Nikech waongeyo kuom Nyasaye
-Wechewa duto duto e lamo!')
-      `);
+    // 5. members
+    try {
+      const memberCount = await db.get<{ count: number }>('SELECT COUNT(*) as count FROM members');
+      if (memberCount && Number(memberCount.count) === 0) {
+        await db.run(`INSERT OR IGNORE INTO members (id, name, contact, join_date, status, gender, family_role, birth_date, branch_id, cell_group_id) VALUES
+          (1, 'Elder Moses Okwany', '+254712345678', '2010-05-01', 'Active', 'Male', 'Father', '1978-04-15', 1, 1),
+          (2, 'Jane Awuor', '+254722222333', '2011-02-14', 'Active', 'Female', 'Mother', '1982-08-22', 1, 2),
+          (3, 'Collins Omondi', '+254733333444', '2021-12-01', 'Active', 'Male', 'Father', '1985-11-12', 4, 5),
+          (4, 'Mary Atieno', '+254744444555', '2018-02-15', 'Active', 'Female', 'Mother', '1975-01-30', 3, 4),
+          (5, 'Silas Owino', '+254755555666', '2021-11-05', 'Active', 'Male', 'Father', '1980-06-18', 4, 5),
+          (6, 'Emmanuel Ochieng', '+254766666777', '2012-06-10', 'Active', 'Male', 'Youth', '1998-09-05', 1, 1),
+          (7, 'Grace Akinyi', '+254777777888', '2018-03-01', 'Active', 'Female', 'Single', '1990-12-25', 3, 4),
+          (8, 'Kevin Wafula', '+254788888999', '2015-09-01', 'Active', 'Male', 'Father', '1983-03-14', 2, 3),
+          (9, 'Beatrice Adhiambo', '+254799999000', '2022-01-15', 'Active', 'Female', 'Youth', '2001-05-20', 1, 2),
+          (10, 'Benson Ochieng', '+254711122233', '2015-08-20', 'Active', 'Male', 'Father', '1976-10-10', 2, 3),
+          (11, 'David Kiprop', '+254722233344', '2023-04-10', 'Visitor', 'Male', 'Single', '1995-07-08', 1, NULL),
+          (12, 'Sarah Cherono', '+254733344455', '2024-01-18', 'Visitor', 'Female', 'Youth', '2002-11-30', 2, NULL)
+        `);
+      }
+    } catch (err) {
+      console.error('Seeding members failed:', err);
     }
-  } catch (err) {
-    console.error('Seeding hymns failed:', err);
+
+    // 6. contributions
+    try {
+      const contrCount = await db.get<{ count: number }>('SELECT COUNT(*) as count FROM contributions');
+      if (contrCount && Number(contrCount.count) === 0) {
+        await db.run(`INSERT OR IGNORE INTO contributions (id, member_id, member_name, amount, type, date, payment_method) VALUES
+          (1, 1, 'Elder Moses Okwany', 5000, 'Tithe', '2026-06-01', 'M-Pesa'),
+          (2, 2, 'Jane Awuor', 3500, 'Tithe', '2026-06-02', 'M-Pesa'),
+          (3, 6, 'Emmanuel Ochieng', 1000, 'Offering', '2026-06-07', 'Cash'),
+          (4, 8, 'Kevin Wafula', 4500, 'Tithe', '2026-06-05', 'Bank Transfer'),
+          (5, NULL, 'Anonymous', 25000, 'Building Fund', '2026-06-07', 'Bank Transfer'),
+          (6, 1, 'Elder Moses Okwany', 2000, 'Missions', '2026-06-14', 'M-Pesa'),
+          (7, 3, 'Collins Omondi', 3000, 'Tithe', '2026-06-15', 'M-Pesa'),
+          (8, 4, 'Mary Atieno', 4000, 'Tithe', '2026-06-15', 'M-Pesa'),
+          (9, 9, 'Beatrice Adhiambo', 500, 'Offering', '2026-06-21', 'Cash'),
+          (10, NULL, 'Anonymous Walk-In', 12500, 'Offering', '2026-06-21', 'Cash'),
+          (11, 1, 'Elder Moses Okwany', 6000, 'Tithe', '2026-06-28', 'M-Pesa'),
+          (12, 2, 'Jane Awuor', 3500, 'Tithe', '2026-06-28', 'M-Pesa')
+        `);
+      }
+    } catch (err) {
+      console.error('Seeding contributions failed:', err);
+    }
+
+    // 7. expenditures
+    try {
+      const expCount = await db.get<{ count: number }>('SELECT COUNT(*) as count FROM expenditures');
+      if (expCount && Number(expCount.count) === 0) {
+        await db.run(`INSERT OR IGNORE INTO expenditures (id, category, amount, date, description) VALUES
+          (1, 'Salaries', 30000, '2026-06-25', 'Monthly allowance for local pastors & staff'),
+          (2, 'Utilities', 4500, '2026-06-10', 'HQ Electricity and water bills'),
+          (3, 'Charity', 15000, '2026-06-12', 'Support for local primary school in Ramba'),
+          (4, 'Missions', 8000, '2026-06-18', 'Evangelism outreach support in Kabondo regional markets'),
+          (5, 'Maintenance', 6200, '2026-06-05', 'Repair of sound system microphones and cables'),
+          (6, 'Events', 12000, '2026-06-20', 'Catering & materials for the Annual Youth Fellowship seminar')
+        `);
+      }
+    } catch (err) {
+      console.error('Seeding expenditures failed:', err);
+    }
+
+    // 8. attendance_sessions & records
+    try {
+      const attSessCount = await db.get<{ count: number }>('SELECT COUNT(*) as count FROM attendance_sessions');
+      if (attSessCount && Number(attSessCount.count) === 0) {
+        await db.run(`INSERT OR IGNORE INTO attendance_sessions (id, date, service_name, branch_id) VALUES
+          (1, '2026-06-07', 'Sunday Main Service', 1),
+          (2, '2026-06-14', 'Sunday Main Service', 1),
+          (3, '2026-06-21', 'Sunday Main Service', 1),
+          (4, '2026-06-28', 'Sunday Main Service', 1),
+          (5, '2026-06-07', 'Sunday Main Service', 2),
+          (6, '2026-06-14', 'Sunday Main Service', 2)
+        `);
+        
+        const attRecCount = await db.get<{ count: number }>('SELECT COUNT(*) as count FROM attendance_records');
+        if (attRecCount && Number(attRecCount.count) === 0) {
+          await db.run(`INSERT OR IGNORE INTO attendance_records (id, session_id, member_id, status) VALUES
+            (1, 1, 1, 'Present'),
+            (2, 1, 2, 'Present'),
+            (3, 1, 6, 'Present'),
+            (4, 1, 9, 'Present'),
+            (5, 1, 11, 'Present'),
+            (6, 2, 1, 'Present'),
+            (7, 2, 2, 'Present'),
+            (8, 2, 6, 'Absent'),
+            (9, 2, 9, 'Present'),
+            (10, 2, 11, 'Absent'),
+            (11, 3, 1, 'Present'),
+            (12, 3, 2, 'Present'),
+            (13, 3, 6, 'Present'),
+            (14, 3, 9, 'Present'),
+            (15, 3, 11, 'Present'),
+            (16, 4, 1, 'Present'),
+            (17, 4, 2, 'Present'),
+            (18, 4, 6, 'Present'),
+            (19, 4, 9, 'Present'),
+            (20, 4, 11, 'Absent'),
+            (21, 5, 8, 'Present'),
+            (22, 5, 10, 'Present'),
+            (23, 5, 12, 'Present'),
+            (24, 6, 8, 'Present'),
+            (25, 6, 10, 'Present'),
+            (26, 6, 12, 'Absent')
+          `);
+        }
+      }
+    } catch (err) {
+      console.error('Seeding attendance failed:', err);
+    }
+
+    // 9. events
+    try {
+      const eventCount = await db.get<{ count: number }>('SELECT COUNT(*) as count FROM events');
+      if (eventCount && Number(eventCount.count) === 0) {
+        await db.run(`INSERT OR IGNORE INTO events (id, title, description, date, location) VALUES
+          (1, 'Annual Revival & Healing Crusade', 'A powerful 3-day spiritual gathering with guest speakers from all over East Africa.', '2026-07-10', 'GIMK HQ Grounds, Ramba-Kabondo'),
+          (2, 'Regional Youth Empowerment Seminar', 'Mentorship session on entrepreneurship, career growth, and Christian integrity.', '2026-07-18', 'Nairobi Kawangware Branch'),
+          (3, 'All-Cell Fellowship Open Day', 'Joint prayer and worship meeting followed by fellowship meals with all regional cell members.', '2026-08-01', 'GIMK HQ Church Hall, Ramba')
+        `);
+      }
+    } catch (err) {
+      console.error('Seeding events failed:', err);
+    }
+
+    // 10. sermons
+    try {
+      const sermonCount = await db.get<{ count: number }>('SELECT COUNT(*) as count FROM sermons');
+      if (sermonCount && Number(sermonCount.count) === 0) {
+        await db.run(`INSERT OR IGNORE INTO sermons (id, title, speaker, date, summary, media_url) VALUES
+          (1, 'Walking by Faith, Not by Sight', 'Rev. Dr. Jared Okwany', '2026-06-28', 'Deep exploration of Genesis 12 and the call of Abraham, encouraging believers to move forward even when the future is unseen.', 'https://www.soundclouddemo.com/gimk/sermon-2026-06-28.mp3'),
+          (2, 'The Power of a Unified Church', 'Pastor Benson Ochieng', '2026-06-21', 'Focusing on Psalm 133 and Ephesians 4, discussing how unity attracts Gods blessing and drives impactful ministry.', 'https://www.youtube.com/gimk/sermon-2026-06-21.mp4'),
+          (3, 'The Heart of True Stewardship', 'Rev. Dr. Jared Okwany', '2026-06-14', 'A sermon on Malachi 3 and 2 Corinthians 9, highlighting that giving is a matter of heart gratitude rather than mere obligation.', 'https://www.soundclouddemo.com/gimk/sermon-2026-06-14.mp3')
+        `);
+      }
+    } catch (err) {
+      console.error('Seeding sermons failed:', err);
+    }
+
+    // 11. hymns
+    try {
+      const hymnCount = await db.get<{ count: number }>('SELECT COUNT(*) as count FROM hymns');
+      if (hymnCount && Number(hymnCount.count) === 0) {
+        await db.run(`INSERT OR IGNORE INTO hymns (id, number, title, key, category, lyrics_english, lyrics_kiswahili, lyrics_luo) VALUES
+          (1, 1, 'Amazing Grace / Wema wa Ajabu / Ngono Mar Adhum', 'G', 'Grace & Salvation', 
+  'Amazing grace! How sweet the sound
+  That saved a wretch like me!
+  I once was lost, but now am found;
+  Was blind, but now I see.
+  
+  Through many dangers, toils and snares,
+  I have already come;
+  Tis grace hath brought me safe thus far,
+  And grace will lead me home.',
+  'Wema wa ajabu wa Mwokozi,
+  Uliookoa roho yangu!
+  Nilipotea nikatafutwa,
+  Sasa ninaona kwa wema wake.
+  
+  Katika hatari na taabu nyingi,
+  Nimepitishwa salama;
+  Wema ndio ulioniongoza,
+  Wema utanipeleka nyumbani.',
+  'Ngono mar adhum makwayo richo,
+  Ma neno chuny kendo duto!
+  Ne alal ngang to sani ayudore,
+  An ne muofni, sani aneno.
+  
+  Kuom sand kendo kuom masiche duto,
+  Asewok maber to mabor;
+  Ng''wono kenda emasegenga,
+  Kendo ng''wono notera dala.'),
+  
+          (2, 2, 'How Great Thou Art / Wewe ni Mkuu / En Dichuo Maduong''', 'Bf', 'Praise & Worship',
+  'O Lord my God, when I in awesome wonder
+  Consider all the worlds Thy hands have made,
+  I see the stars, I hear the rolling thunder,
+  Thy power throughout the universe displayed!
+  
+  Then sings my soul, my Savior God, to Thee,
+  How great Thou art! How great Thou art!
+  Then sings my soul, my Savior God, to Thee,
+  How great Thou art! How great Thou art!',
+  'Ee Bwana Mungu wangu, nikishangaa
+  Kuangalia kazi za mikono yako,
+  Nyota na radi zinazovuma,
+  Nguvu zako kote ulimwenguni!
+  
+  Kisha roho yangu na ikuimbie,
+  Wewe ni mkuu, jinsi gani mkuu!
+  Kisha roho yangu na ikuimbie,
+  Wewe ni mkuu, jinsi gani mkuu!',
+  'Ee Ruoth Nyasacha, ka aparo duto
+  Tije mag lwetegi masechweyo,
+  Aseno sulwe, awinjo mor polo,
+  Teko mari osefweny piny duto!
+  
+  Chunyna to wer, Ruoth Nyasacha maber,
+  En dichuo maduong''! En dichuo maduong''!
+  Chunyna to wer, Ruoth Nyasacha maber,
+  En dichuo maduong''! En dichuo maduong''!'),
+  
+          (3, 3, 'What a Friend We Have in Jesus / Rafiki wa Kweli ni Yesu / Osiep Mabye En Yesu', 'F', 'Prayer & Trust',
+  'What a friend we have in Jesus,
+  All our sins and griefs to bear!
+  What a privilege to carry
+  Everything to God in prayer!
+  Oh, what peace we often forfeit,
+  Oh, what needless pain we bear,
+  All because we do not carry
+  Everything to God in prayer!',
+  'Rafiki mwema ni Yesu,
+  Abebeaye dhambi zetu zote!
+  Ni heri iliyoje kwetu
+  Kupeleka yote kwa Mungu kwa maombi!
+  Amani gani twajikosesha,
+  Maumivu gani ya bure twabeba,
+  Yote kwa sababu hatupeleki
+  Kila kitu kwa Mungu kwa maombi!',
+  'Osiep maber maradiri en Yesu,
+  Mating''o richo kendo parruokwa duto!
+  En heri maduong'' malich nwa
+  Kwalo wechewa duto ne Nyasaye!
+  O, kuwe maduong'' ma wapendorego,
+  Kendo chunywa thagore nono,
+  Nikech waongeyo kuom Nyasaye
+  Wechewa duto duto e lamo!')
+        `);
+      }
+    } catch (err) {
+      console.error('Seeding hymns failed:', err);
+    }
   }
 
   // Reset sequences for PostgreSQL after seeding explicit IDs
@@ -822,35 +829,37 @@ Wechewa duto duto e lamo!')
 
   // Seed default bible cache for Genesis 1 to prevent immediate quota usage on page load
   try {
-    const genesisEsv = JSON.stringify([
-      {"verse": 1, "text": "In the beginning, God created the heavens and the earth."},
-      {"verse": 2, "text": "The earth was without form and void, and darkness was over the face of the deep. And the Spirit of God was hovering over the face of the waters."},
-      {"verse": 3, "text": "And God said, 'Let there be light,' and there was light."},
-      {"verse": 4, "text": "And God saw that the light was good. And God separated the light from the darkness."},
-      {"verse": 5, "text": "God called the light Day, and the darkness he called Night. And there was evening and there was morning, the first day."}
-    ]);
+    if (!alreadySeeded) {
+      const genesisEsv = JSON.stringify([
+        {"verse": 1, "text": "In the beginning, God created the heavens and the earth."},
+        {"verse": 2, "text": "The earth was without form and void, and darkness was over the face of the deep. And the Spirit of God was hovering over the face of the waters."},
+        {"verse": 3, "text": "And God said, 'Let there be light,' and there was light."},
+        {"verse": 4, "text": "And God saw that the light was good. And God separated the light from the darkness."},
+        {"verse": 5, "text": "God called the light Day, and the darkness he called Night. And there was evening and there was morning, the first day."}
+      ]);
 
-    const genesisSwahili = JSON.stringify([
-      {"verse": 1, "text": "Hapo mwanzo Mungu aliziumba mbingu na nchi."},
-      {"verse": 2, "text": "Nayo nchi ilikuwa ukiwa, tena utupu, na giza lilikuwa juu ya uso wa vilindi vya maji; Roho ya Mungu ikatulia juu ya uso wa maji."},
-      {"verse": 3, "text": "Mungu akasema, 'Iwe nuru'; ikawa nuru."},
-      {"verse": 4, "text": "Mungu akaiona nuru, ya kuwa ni njema; Mungu akatenga nuru na giza."},
-      {"verse": 5, "text": "Mungu akaiita nuru Mchana, na giza akaliita Usiku. Ikawa jioni ikawa asubuhi, siku ya kwanza."}
-    ]);
+      const genesisSwahili = JSON.stringify([
+        {"verse": 1, "text": "Hapo mwanzo Mungu aliziumba mbingu na nchi."},
+        {"verse": 2, "text": "Nayo nchi ilikuwa ukiwa, tena utupu, na giza lilikuwa juu ya uso wa vilindi vya maji; Roho ya Mungu ikatulia juu ya uso wa maji."},
+        {"verse": 3, "text": "Mungu akasema, 'Iwe nuru'; ikawa nuru."},
+        {"verse": 4, "text": "Mungu akaiona nuru, ya kuwa ni njema; Mungu akatenga nuru na giza."},
+        {"verse": 5, "text": "Mungu akaiita nuru Mchana, na giza akaliita Usiku. Ikawa jioni ikawa asubuhi, siku ya kwanza."}
+      ]);
 
-    const genesisLuo = JSON.stringify([
-      {"verse": 1, "text": "E chakruok Nyasaye nochweyo polo gi piny."},
-      {"verse": 2, "text": "Piny ne onge gi kido kendo ne otimo thuolo, kendo mudo ne oimo bwoye duto mapiny, to Roho mar Nyasaye ne huyo kuom pi."},
-      {"verse": 3, "text": "Nyasaye nowacho kama, 'Nuru maber obedoe,' omiyo nuru nobedoe."},
-      {"verse": 4, "text": "Nyasaye neon nuru ni ber; omiyo nopogo nuru gi mudo."},
-      {"verse": 5, "text": "Nyasaye noluongo nuru ni Odiechieng', to mudo noluongo ni Otieno. Ne otieno kendo ne okinyi, odiechieng' mokuongo."}
-    ]);
+      const genesisLuo = JSON.stringify([
+        {"verse": 1, "text": "E chakruok Nyasaye nochweyo polo gi piny."},
+        {"verse": 2, "text": "Piny ne onge gi kido kendo ne otimo thuolo, kendo mudo ne oimo bwoye duto mapiny, to Roho mar Nyasaye ne huyo kuom pi."},
+        {"verse": 3, "text": "Nyasaye nowacho kama, 'Nuru maber obedoe,' omiyo nuru nobedoe."},
+        {"verse": 4, "text": "Nyasaye neon nuru ni ber; omiyo nopogo nuru gi mudo."},
+        {"verse": 5, "text": "Nyasaye noluongo nuru ni Odiechieng', to mudo noluongo ni Otieno. Ne otieno kendo ne okinyi, odiechieng' mokuongo."}
+      ]);
 
-    await db.run(`INSERT OR IGNORE INTO bible_chapters_cache (book, chapter, translation, verses_json) VALUES 
-      ('Genesis', 1, 'esv', ?),
-      ('Genesis', 1, 'swahili', ?),
-      ('Genesis', 1, 'luo', ?)
-    `, genesisEsv, genesisSwahili, genesisLuo);
+      await db.run(`INSERT OR IGNORE INTO bible_chapters_cache (book, chapter, translation, verses_json) VALUES 
+        ('Genesis', 1, 'esv', ?),
+        ('Genesis', 1, 'swahili', ?),
+        ('Genesis', 1, 'luo', ?)
+      `, genesisEsv, genesisSwahili, genesisLuo);
+    }
   } catch (seedErr) {
     console.error('Failed to seed bible cache:', seedErr);
   }
