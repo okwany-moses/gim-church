@@ -166,6 +166,10 @@ async function initializeDatabase(): Promise<CompatDatabase> {
       await pgDb.get('SELECT 1');
       console.log('Connected to Cloud SQL successfully.');
       
+      // Assign instantly so we NEVER fall back to SQLite if the DB is reachable
+      dbInstance = pgDb;
+      currentDbType = 'cloudsql';
+      
       if (sqlAdminUser && sqlAdminPassword) {
         console.log('Cloud SQL admin credentials detected. Initializing schema as admin...');
         const adminDb = new PostgresCompatDatabase({
@@ -178,33 +182,56 @@ async function initializeDatabase(): Promise<CompatDatabase> {
           // Grant schema permission to app user
           await adminDb.exec(`GRANT ALL ON SCHEMA public TO "${sqlUser}"`);
           
-          // Re-create/update tables
-          await initDb(adminDb);
-          
-          // Grant privileges on all existing tables and sequences to app user
-          await adminDb.exec(`GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO "${sqlUser}"`);
-          await adminDb.exec(`GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO "${sqlUser}"`);
+          // Try to run initDb as admin first to ensure tables exist
+          try {
+            console.log('Running schema initialization as admin user...');
+            await initDb(adminDb);
+          } catch (initAdminErr) {
+            console.warn('Warning: initDb as admin encountered issues, proceeding...', initAdminErr);
+          }
+
+          // Grant privileges on all existing tables and sequences to app user (safely catch if none exist yet)
+          try {
+            await adminDb.exec(`GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO "${sqlUser}"`);
+            await adminDb.exec(`GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO "${sqlUser}"`);
+          } catch (e) {
+            console.log('Granting privileges to app user failed or no tables found:', e);
+          }
           
           // Also alter default privileges so future tables/sequences are accessible to the app user
-          await adminDb.exec(`ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO "${sqlUser}"`);
-          await adminDb.exec(`ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO "${sqlUser}"`);
+          try {
+            await adminDb.exec(`ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO "${sqlUser}"`);
+            await adminDb.exec(`ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO "${sqlUser}"`);
+          } catch (e) {
+            console.log('Alter default privileges failed or not supported:', e);
+          }
+          
+          // Initialise the schema and seed AS THE APP USER, so that the app user owns all tables
+          console.log('Running schema initialization and seeding as the app user...');
+          await initDb(pgDb);
           
           console.log('Admin schema initialization and permission grant completed successfully.');
         } catch (adminErr) {
-          console.error('Error initializing schema as admin:', adminErr);
+          console.error('Error during admin permission grant / app schema initialization:', adminErr);
           console.warn('Attempting normal initialization as app user...');
-          await initDb(pgDb);
+          try {
+            await initDb(pgDb);
+          } catch (pgInitErr) {
+            console.error('Warning: Schema/seed initialization as app user failed:', pgInitErr);
+          }
         } finally {
           try {
             await adminDb.close();
           } catch (e) {}
         }
       } else {
-        await initDb(pgDb);
+        try {
+          await initDb(pgDb);
+        } catch (pgInitErr) {
+          console.error('Warning: Schema/seed initialization failed:', pgInitErr);
+        }
       }
       
-      dbInstance = pgDb;
-      currentDbType = 'cloudsql';
       return dbInstance;
     } catch (pgErr) {
       console.error('Failed to connect to Cloud SQL:', pgErr);
@@ -221,10 +248,16 @@ async function initializeDatabase(): Promise<CompatDatabase> {
       await pgDb.get('SELECT 1');
       console.log('Connected to PostgreSQL successfully.');
       
-      // Initialize schemas & seeds
-      await initDb(pgDb);
+      // Assign instantly so we NEVER fall back to SQLite if the DB is reachable
       dbInstance = pgDb;
       currentDbType = 'postgresql';
+
+      // Initialize schemas & seeds
+      try {
+        await initDb(pgDb);
+      } catch (pgInitErr) {
+        console.error('Warning: Schema/seed initialization failed:', pgInitErr);
+      }
       return dbInstance;
     } catch (pgErr) {
       console.error('Failed to connect to PostgreSQL:', pgErr);
@@ -421,172 +454,211 @@ async function initDb(db: CompatDatabase) {
     );
   `);
 
-  // Wrap seeding in try-catch to prevent foreign key errors or duplicate violations from crashing connection initialization
+  // Wrap seeding in individual try-catch blocks to prevent any seeding conflict from aborting overall database initialization
+  console.log('Running database seeding...');
+
+  // 1. system_backups
   try {
-    console.log('Running database seeding...');
-    // Check if system_backups has any rows
     const backupCount = await db.get<{ count: number }>('SELECT COUNT(*) as count FROM system_backups');
-  if (backupCount && Number(backupCount.count) === 0) {
-    await db.run("INSERT INTO system_backups (timestamp) VALUES ('2026-06-30 18:45:12')");
+    if (backupCount && Number(backupCount.count) === 0) {
+      await db.run("INSERT OR IGNORE INTO system_backups (id, timestamp) VALUES (1, '2026-06-30 18:45:12')");
+    }
+  } catch (err) {
+    console.error('Seeding system_backups failed:', err);
   }
 
-  // Check if tasks has any rows
-  const taskCount = await db.get<{ count: number }>('SELECT COUNT(*) as count FROM tasks');
-  if (taskCount && Number(taskCount.count) === 0) {
-    await db.run(`INSERT INTO tasks (id, title, description, assigned_to, due_date, status, category) VALUES 
-      (1, 'Setup Sound System for Crusade', 'Coordinate with the HQ tech team to test all wireless microphones, audio mixer, and outdoor speakers.', 'Emmanuel Ochieng', '2026-07-09', 'Pending', 'Event'),
-      (2, 'HQ Sanctuary Roof Inspection', 'Inspect the main sanctuary metal sheets for leakages before the July rains begin.', 'Elder Moses Okwany', '2026-07-05', 'In Progress', 'Facility'),
-      (3, 'Prepare Financial Statement Q2', 'Compile all tithes, offerings, and administrative expenses from the four regional branches.', 'Jane Awuor', '2026-07-15', 'Pending', 'Administration'),
-      (4, 'Repair Guest House Lighting', 'Replace blown bulbs and rewire the switches in the guest rooms.', 'Silas Owino', '2026-06-29', 'Completed', 'Facility')
-    `);
-  }
-
-  // Check if branches exist. If not, seed realistic data
-  const branchCount = await db.get<{ count: number }>('SELECT COUNT(*) as count FROM branches');
-  if (branchCount && Number(branchCount.count) === 0) {
-    // 1. Seed branches
-    await db.run(`INSERT INTO branches (id, name, location, pastor, date_opened) VALUES 
-      (1, 'GIMK Headquarters (Ramba-Kabondo)', 'Ramba, Kabondo, Homa Bay County', 'Rev. Dr. Jared Okwany', '2010-04-12'),
-      (2, 'GIMK Nairobi Branch', 'Kawangware, Nairobi', 'Pastor Benson Ochieng', '2015-08-20'),
-      (3, 'GIMK Kisumu Branch', 'Nyalenda, Kisumu', 'Pastor Mary Atieno', '2018-02-15'),
-      (4, 'GIMK Homa Bay Branch', 'Homa Bay Town, Homa Bay', 'Pastor Silas Owino', '2021-11-05')
-    `);
-  }
-
-  // 2. Seed cell groups
-  const cellCount = await db.get<{ count: number }>('SELECT COUNT(*) as count FROM cell_groups');
-  if (cellCount && Number(cellCount.count) === 0) {
-    await db.run(`INSERT INTO cell_groups (id, name, leader, meeting_details, branch_id) VALUES
-      (1, 'Ramba Grace Fellowship', 'Elder Moses Okwany', 'Tuesdays 5:30 PM - Ramba Village', 1),
-      (2, 'Kabondo Light Fellowship', 'Deaconess Jane Awuor', 'Thursdays 6:00 PM - Kabondo Center', 1),
-      (3, 'Kawangware Hope Cell', 'Bro. Kevin Wafula', 'Wednesdays 6:30 PM - Kawangware Area 56', 2),
-      (4, 'Nyalenda Victory Group', 'Sister Grace Akinyi', 'Fridays 5:00 PM - Nyalenda B', 3),
-      (5, 'Homa Bay Town Fellowship', 'Elder Collins Omondi', 'Tuesdays 6:00 PM - Sofia Estate', 4)
-    `);
-  }
-
-  // 3. Seed members
-  const memberCount = await db.get<{ count: number }>('SELECT COUNT(*) as count FROM members');
-  if (memberCount && Number(memberCount.count) === 0) {
-    await db.run(`INSERT INTO members (id, name, contact, join_date, status, gender, family_role, birth_date, branch_id, cell_group_id) VALUES
-      (1, 'Elder Moses Okwany', '+254712345678', '2010-05-01', 'Active', 'Male', 'Father', '1978-04-15', 1, 1),
-      (2, 'Jane Awuor', '+254722222333', '2011-02-14', 'Active', 'Female', 'Mother', '1982-08-22', 1, 2),
-      (3, 'Collins Omondi', '+254733333444', '2021-12-01', 'Active', 'Male', 'Father', '1985-11-12', 4, 5),
-      (4, 'Mary Atieno', '+254744444555', '2018-02-15', 'Active', 'Female', 'Mother', '1975-01-30', 3, 4),
-      (5, 'Silas Owino', '+254755555666', '2021-11-05', 'Active', 'Male', 'Father', '1980-06-18', 4, 5),
-      (6, 'Emmanuel Ochieng', '+254766666777', '2012-06-10', 'Active', 'Male', 'Youth', '1998-09-05', 1, 1),
-      (7, 'Grace Akinyi', '+254777777888', '2018-03-01', 'Active', 'Female', 'Single', '1990-12-25', 3, 4),
-      (8, 'Kevin Wafula', '+254788888999', '2015-09-01', 'Active', 'Male', 'Father', '1983-03-14', 2, 3),
-      (9, 'Beatrice Adhiambo', '+254799999000', '2022-01-15', 'Active', 'Female', 'Youth', '2001-05-20', 1, 2),
-      (10, 'Benson Ochieng', '+254711122233', '2015-08-20', 'Active', 'Male', 'Father', '1976-10-10', 2, 3),
-      (11, 'David Kiprop', '+254722233344', '2023-04-10', 'Visitor', 'Male', 'Single', '1995-07-08', 1, NULL),
-      (12, 'Sarah Cherono', '+254733344455', '2024-01-18', 'Visitor', 'Female', 'Youth', '2002-11-30', 2, NULL)
-    `);
-  }
-
-  // 4. Seed contributions
-  const contrCount = await db.get<{ count: number }>('SELECT COUNT(*) as count FROM contributions');
-  if (contrCount && Number(contrCount.count) === 0) {
-    await db.run(`INSERT INTO contributions (id, member_id, member_name, amount, type, date, payment_method) VALUES
-      (1, 1, 'Elder Moses Okwany', 5000, 'Tithe', '2026-06-01', 'M-Pesa'),
-      (2, 2, 'Jane Awuor', 3500, 'Tithe', '2026-06-02', 'M-Pesa'),
-      (3, 6, 'Emmanuel Ochieng', 1000, 'Offering', '2026-06-07', 'Cash'),
-      (4, 8, 'Kevin Wafula', 4500, 'Tithe', '2026-06-05', 'Bank Transfer'),
-      (5, NULL, 'Anonymous', 25000, 'Building Fund', '2026-06-07', 'Bank Transfer'),
-      (6, 1, 'Elder Moses Okwany', 2000, 'Missions', '2026-06-14', 'M-Pesa'),
-      (7, 3, 'Collins Omondi', 3000, 'Tithe', '2026-06-15', 'M-Pesa'),
-      (8, 4, 'Mary Atieno', 4000, 'Tithe', '2026-06-15', 'M-Pesa'),
-      (9, 9, 'Beatrice Adhiambo', 500, 'Offering', '2026-06-21', 'Cash'),
-      (10, NULL, 'Anonymous Walk-In', 12500, 'Offering', '2026-06-21', 'Cash'),
-      (11, 1, 'Elder Moses Okwany', 6000, 'Tithe', '2026-06-28', 'M-Pesa'),
-      (12, 2, 'Jane Awuor', 3500, 'Tithe', '2026-06-28', 'M-Pesa')
-    `);
-  }
-
-  // 5. Seed expenditures
-  const expCount = await db.get<{ count: number }>('SELECT COUNT(*) as count FROM expenditures');
-  if (expCount && Number(expCount.count) === 0) {
-    await db.run(`INSERT INTO expenditures (id, category, amount, date, description) VALUES
-      (1, 'Salaries', 30000, '2026-06-25', 'Monthly allowance for local pastors & staff'),
-      (2, 'Utilities', 4500, '2026-06-10', 'HQ Electricity and water bills'),
-      (3, 'Charity', 15000, '2026-06-12', 'Support for local primary school in Ramba'),
-      (4, 'Missions', 8000, '2026-06-18', 'Evangelism outreach support in Kabondo regional markets'),
-      (5, 'Maintenance', 6200, '2026-06-05', 'Repair of sound system microphones and cables'),
-      (6, 'Events', 12000, '2026-06-20', 'Catering & materials for the Annual Youth Fellowship seminar')
-    `);
-  }
-
-  // 6. Seed attendance sessions
-  const attSessCount = await db.get<{ count: number }>('SELECT COUNT(*) as count FROM attendance_sessions');
-  if (attSessCount && Number(attSessCount.count) === 0) {
-    await db.run(`INSERT INTO attendance_sessions (id, date, service_name, branch_id) VALUES
-      (1, '2026-06-07', 'Sunday Main Service', 1),
-      (2, '2026-06-14', 'Sunday Main Service', 1),
-      (3, '2026-06-21', 'Sunday Main Service', 1),
-      (4, '2026-06-28', 'Sunday Main Service', 1),
-      (5, '2026-06-07', 'Sunday Main Service', 2),
-      (6, '2026-06-14', 'Sunday Main Service', 2)
-    `);
-
-    // 7. Seed attendance records
-    const attRecCount = await db.get<{ count: number }>('SELECT COUNT(*) as count FROM attendance_records');
-    if (attRecCount && Number(attRecCount.count) === 0) {
-      await db.run(`INSERT INTO attendance_records (id, session_id, member_id, status) VALUES
-        (1, 1, 1, 'Present'),
-        (2, 1, 2, 'Present'),
-        (3, 1, 6, 'Present'),
-        (4, 1, 9, 'Present'),
-        (5, 1, 11, 'Present'),
-        (6, 2, 1, 'Present'),
-        (7, 2, 2, 'Present'),
-        (8, 2, 6, 'Absent'),
-        (9, 2, 9, 'Present'),
-        (10, 2, 11, 'Absent'),
-        (11, 3, 1, 'Present'),
-        (12, 3, 2, 'Present'),
-        (13, 3, 6, 'Present'),
-        (14, 3, 9, 'Present'),
-        (15, 3, 11, 'Present'),
-        (16, 4, 1, 'Present'),
-        (17, 4, 2, 'Present'),
-        (18, 4, 6, 'Present'),
-        (19, 4, 9, 'Present'),
-        (20, 4, 11, 'Absent'),
-        (21, 5, 8, 'Present'),
-        (22, 5, 10, 'Present'),
-        (23, 5, 12, 'Present'),
-        (24, 6, 8, 'Present'),
-        (25, 6, 10, 'Present'),
-        (26, 6, 12, 'Absent')
+  // 2. tasks
+  try {
+    const taskCount = await db.get<{ count: number }>('SELECT COUNT(*) as count FROM tasks');
+    if (taskCount && Number(taskCount.count) === 0) {
+      await db.run(`INSERT OR IGNORE INTO tasks (id, title, description, assigned_to, due_date, status, category) VALUES 
+        (1, 'Setup Sound System for Crusade', 'Coordinate with the HQ tech team to test all wireless microphones, audio mixer, and outdoor speakers.', 'Emmanuel Ochieng', '2026-07-09', 'Pending', 'Event'),
+        (2, 'HQ Sanctuary Roof Inspection', 'Inspect the main sanctuary metal sheets for leakages before the July rains begin.', 'Elder Moses Okwany', '2026-07-05', 'In Progress', 'Facility'),
+        (3, 'Prepare Financial Statement Q2', 'Compile all tithes, offerings, and administrative expenses from the four regional branches.', 'Jane Awuor', '2026-07-15', 'Pending', 'Administration'),
+        (4, 'Repair Guest House Lighting', 'Replace blown bulbs and rewire the switches in the guest rooms.', 'Silas Owino', '2026-06-29', 'Completed', 'Facility')
       `);
     }
+  } catch (err) {
+    console.error('Seeding tasks failed:', err);
   }
 
-  // 8. Seed events
-  const eventCount = await db.get<{ count: number }>('SELECT COUNT(*) as count FROM events');
-  if (eventCount && Number(eventCount.count) === 0) {
-    await db.run(`INSERT INTO events (id, title, description, date, location) VALUES
-      (1, 'Annual Revival & Healing Crusade', 'A powerful 3-day spiritual gathering with guest speakers from all over East Africa.', '2026-07-10', 'GIMK HQ Grounds, Ramba-Kabondo'),
-      (2, 'Regional Youth Empowerment Seminar', 'Mentorship session on entrepreneurship, career growth, and Christian integrity.', '2026-07-18', 'Nairobi Kawangware Branch'),
-      (3, 'All-Cell Fellowship Open Day', 'Joint prayer and worship meeting followed by fellowship meals with all regional cell members.', '2026-08-01', 'GIMK HQ Church Hall, Ramba')
-    `);
+  // 3. branches
+  try {
+    const branchCount = await db.get<{ count: number }>('SELECT COUNT(*) as count FROM branches');
+    if (branchCount && Number(branchCount.count) === 0) {
+      await db.run(`INSERT OR IGNORE INTO branches (id, name, location, pastor, date_opened) VALUES 
+        (1, 'GIMK Headquarters (Ramba-Kabondo)', 'Ramba, Kabondo, Homa Bay County', 'Rev. Dr. Jared Okwany', '2010-04-12'),
+        (2, 'GIMK Nairobi Branch', 'Kawangware, Nairobi', 'Pastor Benson Ochieng', '2015-08-20'),
+        (3, 'GIMK Kisumu Branch', 'Nyalenda, Kisumu', 'Pastor Mary Atieno', '2018-02-15'),
+        (4, 'GIMK Homa Bay Branch', 'Homa Bay Town, Homa Bay', 'Pastor Silas Owino', '2021-11-05')
+      `);
+    }
+  } catch (err) {
+    console.error('Seeding branches failed:', err);
   }
 
-  // 9. Seed sermons
-  const sermonCount = await db.get<{ count: number }>('SELECT COUNT(*) as count FROM sermons');
-  if (sermonCount && Number(sermonCount.count) === 0) {
-    await db.run(`INSERT INTO sermons (id, title, speaker, date, summary, media_url) VALUES
-      (1, 'Walking by Faith, Not by Sight', 'Rev. Dr. Jared Okwany', '2026-06-28', 'Deep exploration of Genesis 12 and the call of Abraham, encouraging believers to move forward even when the future is unseen.', 'https://www.soundclouddemo.com/gimk/sermon-2026-06-28.mp3'),
-      (2, 'The Power of a Unified Church', 'Pastor Benson Ochieng', '2026-06-21', 'Focusing on Psalm 133 and Ephesians 4, discussing how unity attracts Gods blessing and drives impactful ministry.', 'https://www.youtube.com/gimk/sermon-2026-06-21.mp4'),
-      (3, 'The Heart of True Stewardship', 'Rev. Dr. Jared Okwany', '2026-06-14', 'A sermon on Malachi 3 and 2 Corinthians 9, highlighting that giving is a matter of heart gratitude rather than mere obligation.', 'https://www.soundclouddemo.com/gimk/sermon-2026-06-14.mp3')
-    `);
+  // 4. cell_groups
+  try {
+    const cellCount = await db.get<{ count: number }>('SELECT COUNT(*) as count FROM cell_groups');
+    if (cellCount && Number(cellCount.count) === 0) {
+      await db.run(`INSERT OR IGNORE INTO cell_groups (id, name, leader, meeting_details, branch_id) VALUES
+        (1, 'Ramba Grace Fellowship', 'Elder Moses Okwany', 'Tuesdays 5:30 PM - Ramba Village', 1),
+        (2, 'Kabondo Light Fellowship', 'Deaconess Jane Awuor', 'Thursdays 6:00 PM - Kabondo Center', 1),
+        (3, 'Kawangware Hope Cell', 'Bro. Kevin Wafula', 'Wednesdays 6:30 PM - Kawangware Area 56', 2),
+        (4, 'Nyalenda Victory Group', 'Sister Grace Akinyi', 'Fridays 5:00 PM - Nyalenda B', 3),
+        (5, 'Homa Bay Town Fellowship', 'Elder Collins Omondi', 'Tuesdays 6:00 PM - Sofia Estate', 4)
+      `);
+    }
+  } catch (err) {
+    console.error('Seeding cell_groups failed:', err);
   }
 
-  // 10. Seed hymns
-  const hymnCount = await db.get<{ count: number }>('SELECT COUNT(*) as count FROM hymns');
-  if (hymnCount && Number(hymnCount.count) === 0) {
-    await db.run(`INSERT OR IGNORE INTO hymns (id, number, title, key, category, lyrics_english, lyrics_kiswahili, lyrics_luo) VALUES
-      (1, 1, 'Amazing Grace / Wema wa Ajabu / Ngono Mar Adhum', 'G', 'Grace & Salvation', 
+  // 5. members
+  try {
+    const memberCount = await db.get<{ count: number }>('SELECT COUNT(*) as count FROM members');
+    if (memberCount && Number(memberCount.count) === 0) {
+      await db.run(`INSERT OR IGNORE INTO members (id, name, contact, join_date, status, gender, family_role, birth_date, branch_id, cell_group_id) VALUES
+        (1, 'Elder Moses Okwany', '+254712345678', '2010-05-01', 'Active', 'Male', 'Father', '1978-04-15', 1, 1),
+        (2, 'Jane Awuor', '+254722222333', '2011-02-14', 'Active', 'Female', 'Mother', '1982-08-22', 1, 2),
+        (3, 'Collins Omondi', '+254733333444', '2021-12-01', 'Active', 'Male', 'Father', '1985-11-12', 4, 5),
+        (4, 'Mary Atieno', '+254744444555', '2018-02-15', 'Active', 'Female', 'Mother', '1975-01-30', 3, 4),
+        (5, 'Silas Owino', '+254755555666', '2021-11-05', 'Active', 'Male', 'Father', '1980-06-18', 4, 5),
+        (6, 'Emmanuel Ochieng', '+254766666777', '2012-06-10', 'Active', 'Male', 'Youth', '1998-09-05', 1, 1),
+        (7, 'Grace Akinyi', '+254777777888', '2018-03-01', 'Active', 'Female', 'Single', '1990-12-25', 3, 4),
+        (8, 'Kevin Wafula', '+254788888999', '2015-09-01', 'Active', 'Male', 'Father', '1983-03-14', 2, 3),
+        (9, 'Beatrice Adhiambo', '+254799999000', '2022-01-15', 'Active', 'Female', 'Youth', '2001-05-20', 1, 2),
+        (10, 'Benson Ochieng', '+254711122233', '2015-08-20', 'Active', 'Male', 'Father', '1976-10-10', 2, 3),
+        (11, 'David Kiprop', '+254722233344', '2023-04-10', 'Visitor', 'Male', 'Single', '1995-07-08', 1, NULL),
+        (12, 'Sarah Cherono', '+254733344455', '2024-01-18', 'Visitor', 'Female', 'Youth', '2002-11-30', 2, NULL)
+      `);
+    }
+  } catch (err) {
+    console.error('Seeding members failed:', err);
+  }
+
+  // 6. contributions
+  try {
+    const contrCount = await db.get<{ count: number }>('SELECT COUNT(*) as count FROM contributions');
+    if (contrCount && Number(contrCount.count) === 0) {
+      await db.run(`INSERT OR IGNORE INTO contributions (id, member_id, member_name, amount, type, date, payment_method) VALUES
+        (1, 1, 'Elder Moses Okwany', 5000, 'Tithe', '2026-06-01', 'M-Pesa'),
+        (2, 2, 'Jane Awuor', 3500, 'Tithe', '2026-06-02', 'M-Pesa'),
+        (3, 6, 'Emmanuel Ochieng', 1000, 'Offering', '2026-06-07', 'Cash'),
+        (4, 8, 'Kevin Wafula', 4500, 'Tithe', '2026-06-05', 'Bank Transfer'),
+        (5, NULL, 'Anonymous', 25000, 'Building Fund', '2026-06-07', 'Bank Transfer'),
+        (6, 1, 'Elder Moses Okwany', 2000, 'Missions', '2026-06-14', 'M-Pesa'),
+        (7, 3, 'Collins Omondi', 3000, 'Tithe', '2026-06-15', 'M-Pesa'),
+        (8, 4, 'Mary Atieno', 4000, 'Tithe', '2026-06-15', 'M-Pesa'),
+        (9, 9, 'Beatrice Adhiambo', 500, 'Offering', '2026-06-21', 'Cash'),
+        (10, NULL, 'Anonymous Walk-In', 12500, 'Offering', '2026-06-21', 'Cash'),
+        (11, 1, 'Elder Moses Okwany', 6000, 'Tithe', '2026-06-28', 'M-Pesa'),
+        (12, 2, 'Jane Awuor', 3500, 'Tithe', '2026-06-28', 'M-Pesa')
+      `);
+    }
+  } catch (err) {
+    console.error('Seeding contributions failed:', err);
+  }
+
+  // 7. expenditures
+  try {
+    const expCount = await db.get<{ count: number }>('SELECT COUNT(*) as count FROM expenditures');
+    if (expCount && Number(expCount.count) === 0) {
+      await db.run(`INSERT OR IGNORE INTO expenditures (id, category, amount, date, description) VALUES
+        (1, 'Salaries', 30000, '2026-06-25', 'Monthly allowance for local pastors & staff'),
+        (2, 'Utilities', 4500, '2026-06-10', 'HQ Electricity and water bills'),
+        (3, 'Charity', 15000, '2026-06-12', 'Support for local primary school in Ramba'),
+        (4, 'Missions', 8000, '2026-06-18', 'Evangelism outreach support in Kabondo regional markets'),
+        (5, 'Maintenance', 6200, '2026-06-05', 'Repair of sound system microphones and cables'),
+        (6, 'Events', 12000, '2026-06-20', 'Catering & materials for the Annual Youth Fellowship seminar')
+      `);
+    }
+  } catch (err) {
+    console.error('Seeding expenditures failed:', err);
+  }
+
+  // 8. attendance_sessions & records
+  try {
+    const attSessCount = await db.get<{ count: number }>('SELECT COUNT(*) as count FROM attendance_sessions');
+    if (attSessCount && Number(attSessCount.count) === 0) {
+      await db.run(`INSERT OR IGNORE INTO attendance_sessions (id, date, service_name, branch_id) VALUES
+        (1, '2026-06-07', 'Sunday Main Service', 1),
+        (2, '2026-06-14', 'Sunday Main Service', 1),
+        (3, '2026-06-21', 'Sunday Main Service', 1),
+        (4, '2026-06-28', 'Sunday Main Service', 1),
+        (5, '2026-06-07', 'Sunday Main Service', 2),
+        (6, '2026-06-14', 'Sunday Main Service', 2)
+      `);
+      
+      const attRecCount = await db.get<{ count: number }>('SELECT COUNT(*) as count FROM attendance_records');
+      if (attRecCount && Number(attRecCount.count) === 0) {
+        await db.run(`INSERT OR IGNORE INTO attendance_records (id, session_id, member_id, status) VALUES
+          (1, 1, 1, 'Present'),
+          (2, 1, 2, 'Present'),
+          (3, 1, 6, 'Present'),
+          (4, 1, 9, 'Present'),
+          (5, 1, 11, 'Present'),
+          (6, 2, 1, 'Present'),
+          (7, 2, 2, 'Present'),
+          (8, 2, 6, 'Absent'),
+          (9, 2, 9, 'Present'),
+          (10, 2, 11, 'Absent'),
+          (11, 3, 1, 'Present'),
+          (12, 3, 2, 'Present'),
+          (13, 3, 6, 'Present'),
+          (14, 3, 9, 'Present'),
+          (15, 3, 11, 'Present'),
+          (16, 4, 1, 'Present'),
+          (17, 4, 2, 'Present'),
+          (18, 4, 6, 'Present'),
+          (19, 4, 9, 'Present'),
+          (20, 4, 11, 'Absent'),
+          (21, 5, 8, 'Present'),
+          (22, 5, 10, 'Present'),
+          (23, 5, 12, 'Present'),
+          (24, 6, 8, 'Present'),
+          (25, 6, 10, 'Present'),
+          (26, 6, 12, 'Absent')
+        `);
+      }
+    }
+  } catch (err) {
+    console.error('Seeding attendance failed:', err);
+  }
+
+  // 9. events
+  try {
+    const eventCount = await db.get<{ count: number }>('SELECT COUNT(*) as count FROM events');
+    if (eventCount && Number(eventCount.count) === 0) {
+      await db.run(`INSERT OR IGNORE INTO events (id, title, description, date, location) VALUES
+        (1, 'Annual Revival & Healing Crusade', 'A powerful 3-day spiritual gathering with guest speakers from all over East Africa.', '2026-07-10', 'GIMK HQ Grounds, Ramba-Kabondo'),
+        (2, 'Regional Youth Empowerment Seminar', 'Mentorship session on entrepreneurship, career growth, and Christian integrity.', '2026-07-18', 'Nairobi Kawangware Branch'),
+        (3, 'All-Cell Fellowship Open Day', 'Joint prayer and worship meeting followed by fellowship meals with all regional cell members.', '2026-08-01', 'GIMK HQ Church Hall, Ramba')
+      `);
+    }
+  } catch (err) {
+    console.error('Seeding events failed:', err);
+  }
+
+  // 10. sermons
+  try {
+    const sermonCount = await db.get<{ count: number }>('SELECT COUNT(*) as count FROM sermons');
+    if (sermonCount && Number(sermonCount.count) === 0) {
+      await db.run(`INSERT OR IGNORE INTO sermons (id, title, speaker, date, summary, media_url) VALUES
+        (1, 'Walking by Faith, Not by Sight', 'Rev. Dr. Jared Okwany', '2026-06-28', 'Deep exploration of Genesis 12 and the call of Abraham, encouraging believers to move forward even when the future is unseen.', 'https://www.soundclouddemo.com/gimk/sermon-2026-06-28.mp3'),
+        (2, 'The Power of a Unified Church', 'Pastor Benson Ochieng', '2026-06-21', 'Focusing on Psalm 133 and Ephesians 4, discussing how unity attracts Gods blessing and drives impactful ministry.', 'https://www.youtube.com/gimk/sermon-2026-06-21.mp4'),
+        (3, 'The Heart of True Stewardship', 'Rev. Dr. Jared Okwany', '2026-06-14', 'A sermon on Malachi 3 and 2 Corinthians 9, highlighting that giving is a matter of heart gratitude rather than mere obligation.', 'https://www.soundclouddemo.com/gimk/sermon-2026-06-14.mp3')
+      `);
+    }
+  } catch (err) {
+    console.error('Seeding sermons failed:', err);
+  }
+
+  // 11. hymns
+  try {
+    const hymnCount = await db.get<{ count: number }>('SELECT COUNT(*) as count FROM hymns');
+    if (hymnCount && Number(hymnCount.count) === 0) {
+      await db.run(`INSERT OR IGNORE INTO hymns (id, number, title, key, category, lyrics_english, lyrics_kiswahili, lyrics_luo) VALUES
+        (1, 1, 'Amazing Grace / Wema wa Ajabu / Ngono Mar Adhum', 'G', 'Grace & Salvation', 
 'Amazing grace! How sweet the sound
 That saved a wretch like me!
 I once was lost, but now am found;
@@ -615,7 +687,7 @@ Asewok maber to mabor;
 Ng''wono kenda emasegenga,
 Kendo ng''wono notera dala.'),
 
-      (2, 2, 'How Great Thou Art / Wewe ni Mkuu / En Dichuo Maduong''', 'Bf', 'Praise & Worship',
+        (2, 2, 'How Great Thou Art / Wewe ni Mkuu / En Dichuo Maduong''', 'Bf', 'Praise & Worship',
 'O Lord my God, when I in awesome wonder
 Consider all the worlds Thy hands have made,
 I see the stars, I hear the rolling thunder,
@@ -644,7 +716,7 @@ En dichuo maduong''! En dichuo maduong''!
 Chunyna to wer, Ruoth Nyasacha maber,
 En dichuo maduong''! En dichuo maduong''!'),
 
-      (3, 3, 'What a Friend We Have in Jesus / Rafiki wa Kweli ni Yesu / Osiep Mabye En Yesu', 'F', 'Prayer & Trust',
+        (3, 3, 'What a Friend We Have in Jesus / Rafiki wa Kweli ni Yesu / Osiep Mabye En Yesu', 'F', 'Prayer & Trust',
 'What a friend we have in Jesus,
 All our sins and griefs to bear!
 What a privilege to carry
@@ -669,10 +741,10 @@ O, kuwe maduong'' ma wapendorego,
 Kendo chunywa thagore nono,
 Nikech waongeyo kuom Nyasaye
 Wechewa duto duto e lamo!')
-    `);
-  }
-  } catch (seedErr) {
-    console.error('Warning: Database seeding failed (ignored to preserve database connection):', seedErr);
+      `);
+    }
+  } catch (err) {
+    console.error('Seeding hymns failed:', err);
   }
 
   // Reset sequences for PostgreSQL after seeding explicit IDs
@@ -782,4 +854,69 @@ Wechewa duto duto e lamo!')
   } catch (seedErr) {
     console.error('Failed to seed bible cache:', seedErr);
   }
+
+  // 12. Run Automatic Database De-duplication on startup to clean up any past accumulated duplicates
+  console.log('Initiating automatic database de-duplication check...');
+  const deduplicateTables = [
+    {
+      table: 'expenditures',
+      groupBy: 'category, amount, date, description'
+    },
+    {
+      table: 'tasks',
+      groupBy: 'title, description, assigned_to, due_date, status, category'
+    },
+    {
+      table: 'contributions',
+      groupBy: 'member_id, member_name, amount, type, date, payment_method'
+    },
+    {
+      table: 'members',
+      groupBy: 'name, contact, join_date, status, gender, family_role, birth_date, branch_id, cell_group_id'
+    },
+    {
+      table: 'branches',
+      groupBy: 'name, location, pastor, date_opened'
+    },
+    {
+      table: 'cell_groups',
+      groupBy: 'name, leader, meeting_details, branch_id'
+    },
+    {
+      table: 'events',
+      groupBy: 'title, description, date, location'
+    },
+    {
+      table: 'sermons',
+      groupBy: 'title, speaker, date, summary, media_url'
+    },
+    {
+      table: 'hymns',
+      groupBy: 'number, title, key, category, lyrics_english, lyrics_kiswahili, lyrics_luo'
+    },
+    {
+      table: 'attendance_sessions',
+      groupBy: 'date, service_name, branch_id'
+    },
+    {
+      table: 'attendance_records',
+      groupBy: 'session_id, member_id, status'
+    }
+  ];
+
+  for (const item of deduplicateTables) {
+    try {
+      await db.run(`
+        DELETE FROM ${item.table}
+        WHERE id NOT IN (
+          SELECT MIN(id)
+          FROM ${item.table}
+          GROUP BY ${item.groupBy}
+        )
+      `);
+    } catch (dedupErr) {
+      console.error(`De-duplication of table ${item.table} failed:`, dedupErr);
+    }
+  }
+  console.log('Database de-duplication process complete.');
 }
