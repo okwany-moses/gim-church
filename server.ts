@@ -1,7 +1,7 @@
 import express from 'express';
 import path from 'path';
 import { createServer as createViteServer } from 'vite';
-import { getDb, getDbType } from './server/db.js';
+import { getDb, getDbType, generateNextRegNumber } from './server/db.js';
 import { GoogleGenAI, Type } from '@google/genai';
 
 const app = express();
@@ -131,12 +131,15 @@ app.post('/api/members', async (req, res) => {
       return res.status(400).json({ error: 'Name and Contact are required' });
     }
 
+    // Determine the next registration number starting from '001' using sequence generator
+    const nextRegNum = await generateNextRegNumber(db);
+
     const result = await db.run(`
-      INSERT INTO members (name, contact, join_date, status, gender, family_role, birth_date, branch_id, cell_group_id)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `, [name, contact, join_date || new Date().toISOString().split('T')[0], status || 'Active', gender || 'Male', family_role || 'Single', birth_date || '', branch_id || null, cell_group_id || null]);
+      INSERT INTO members (name, contact, join_date, status, gender, family_role, birth_date, branch_id, cell_group_id, reg_number)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `, [name, contact, join_date || new Date().toISOString().split('T')[0], status || 'Active', gender || 'Male', family_role || 'Single', birth_date || '', branch_id || null, cell_group_id || null, nextRegNum]);
     
-    res.status(201).json({ id: result.lastID });
+    res.status(201).json({ id: result.lastID, reg_number: nextRegNum });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
@@ -193,11 +196,22 @@ app.post('/api/members/import', async (req, res) => {
       return res.status(400).json({ error: 'Expected an array of member records' });
     }
 
+    const nextRegNumStr = await generateNextRegNumber(db);
+    let currentSeqNum = parseInt(nextRegNumStr, 10);
+    if (isNaN(currentSeqNum)) {
+      currentSeqNum = 1;
+    }
+
     await db.run('BEGIN TRANSACTION');
     for (const item of list) {
+      let regNum = item.reg_number;
+      if (!regNum) {
+        regNum = String(currentSeqNum).padStart(3, '0');
+        currentSeqNum++;
+      }
       await db.run(`
-        INSERT INTO members (name, contact, join_date, status, gender, family_role, birth_date, branch_id, cell_group_id)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO members (name, contact, join_date, status, gender, family_role, birth_date, branch_id, cell_group_id, reg_number)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `, [
         item.name, 
         item.contact || '', 
@@ -207,7 +221,8 @@ app.post('/api/members/import', async (req, res) => {
         item.family_role || 'Single', 
         item.birth_date || '', 
         item.branch_id || null, 
-        item.cell_group_id || null
+        item.cell_group_id || null,
+        regNum
       ]);
     }
     await db.run('COMMIT');
@@ -222,10 +237,13 @@ app.get('/api/contributions', async (req, res) => {
   try {
     const db = await getDb();
     const contributions = await db.all(`
-      SELECT c.*, m.name as member_name, b.name as branch_name
+      SELECT c.*, m.name as member_name, b.name as branch_name,
+             COALESCE(cg.name, cg_member.name) as cell_group_name
       FROM contributions c
       LEFT JOIN members m ON c.member_id = m.id
       LEFT JOIN branches b ON m.branch_id = b.id
+      LEFT JOIN cell_groups cg ON c.cell_group_id = cg.id
+      LEFT JOIN cell_groups cg_member ON m.cell_group_id = cg_member.id
       ORDER BY c.date DESC
     `);
     res.json(contributions);
@@ -237,16 +255,16 @@ app.get('/api/contributions', async (req, res) => {
 app.post('/api/contributions', async (req, res) => {
   try {
     const db = await getDb();
-    const { member_id, member_name, amount, type, date, payment_method } = req.body;
+    const { member_id, member_name, amount, type, date, payment_method, cell_group_id } = req.body;
     
     if (!amount) {
       return res.status(400).json({ error: 'Amount is required' });
     }
 
     const result = await db.run(`
-      INSERT INTO contributions (member_id, member_name, amount, type, date, payment_method)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `, [member_id || null, member_name || 'Anonymous', amount, type || 'Tithe', date || new Date().toISOString().split('T')[0], payment_method || 'M-Pesa']);
+      INSERT INTO contributions (member_id, member_name, amount, type, date, payment_method, cell_group_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `, [member_id || null, member_name || 'Anonymous', amount, type || 'Tithe', date || new Date().toISOString().split('T')[0], payment_method || 'M-Pesa', cell_group_id || null]);
 
     res.status(201).json({ id: result.lastID });
   } catch (error: any) {
@@ -258,13 +276,13 @@ app.put('/api/contributions/:id', async (req, res) => {
   try {
     const db = await getDb();
     const { id } = req.params;
-    const { member_id, member_name, amount, type, date, payment_method } = req.body;
+    const { member_id, member_name, amount, type, date, payment_method, cell_group_id } = req.body;
 
     await db.run(`
       UPDATE contributions
-      SET member_id = ?, member_name = ?, amount = ?, type = ?, date = ?, payment_method = ?
+      SET member_id = ?, member_name = ?, amount = ?, type = ?, date = ?, payment_method = ?, cell_group_id = ?
       WHERE id = ?
-    `, [member_id || null, member_name || 'Anonymous', amount, type, date, payment_method, id]);
+    `, [member_id || null, member_name || 'Anonymous', amount, type, date, payment_method, cell_group_id || null, id]);
 
     res.json({ success: true });
   } catch (error: any) {
@@ -308,15 +326,16 @@ app.post('/api/contributions/import', async (req, res) => {
     await db.run('BEGIN TRANSACTION');
     for (const item of list) {
       await db.run(`
-        INSERT INTO contributions (member_id, member_name, amount, type, date, payment_method)
-        VALUES (?, ?, ?, ?, ?, ?)
+        INSERT INTO contributions (member_id, member_name, amount, type, date, payment_method, cell_group_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
       `, [
         item.member_id || null, 
         item.member_name || 'Anonymous', 
         item.amount || 0, 
         item.type || 'Tithe', 
         item.date || new Date().toISOString().split('T')[0], 
-        item.payment_method || 'M-Pesa'
+        item.payment_method || 'M-Pesa',
+        item.cell_group_id || null
       ]);
     }
     await db.run('COMMIT');

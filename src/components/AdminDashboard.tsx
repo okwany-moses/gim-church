@@ -121,6 +121,43 @@ export default function AdminDashboard({
     category: 'Event' as 'Event' | 'Facility' | 'Administration' | 'Other'
   });
 
+  // Calculate registration trends month-by-month
+  const registrationTrends = React.useMemo(() => {
+    if (!members || members.length === 0) return [];
+
+    const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    const countsByMonth: Record<string, { year: number; month: number; count: number }> = {};
+    
+    members.forEach(m => {
+      if (!m.join_date) return;
+      const parts = m.join_date.split('-');
+      if (parts.length < 2) return;
+      const year = parseInt(parts[0], 10);
+      const month = parseInt(parts[1], 10);
+      if (isNaN(year) || isNaN(month)) return;
+
+      const key = `${year}-${String(month).padStart(2, '0')}`;
+      if (!countsByMonth[key]) {
+        countsByMonth[key] = { year, month, count: 0 };
+      }
+      countsByMonth[key].count++;
+    });
+
+    const sortedKeys = Object.keys(countsByMonth).sort();
+    let cumulativeTotal = 0;
+    
+    return sortedKeys.map(key => {
+      const item = countsByMonth[key];
+      cumulativeTotal += item.count;
+      return {
+        key,
+        monthLabel: `${monthNames[item.month - 1]} ${item.year}`,
+        "New Registrations": item.count,
+        "Total Congregants": cumulativeTotal
+      };
+    });
+  }, [members]);
+
   const formatCurrency = (val: number) => {
     return new Intl.NumberFormat('en-KE', { style: 'currency', currency: 'KES', maximumFractionDigits: 0 }).format(val);
   };
@@ -700,6 +737,114 @@ export default function AdminDashboard({
                   <Line type="monotone" name="Total Registered" dataKey="Total Registered" stroke="#6366f1" strokeWidth={2.5} strokeDasharray="4 4" activeDot={{ r: 5 }} />
                 </LineChart>
               </ResponsiveContainer>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Member Registration Trends over Time */}
+      <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm hover:shadow-md transition-shadow duration-200 space-y-6">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-4">
+          <div>
+            <h3 className="text-md font-extrabold text-blue-900 tracking-tight flex items-center gap-2">
+              <TrendingUp className="text-blue-600" size={18} />
+              <span>Congregant Registration & Sequence Growth Analysis</span>
+            </h3>
+            <p className="text-xs text-slate-500">
+              Month-by-month tracking of member sequence registration numbers, tracking overall church growth sequentially
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-semibold text-slate-500 bg-slate-100 border px-2.5 py-1 rounded-md">
+              Total Sequential IDs: {members.filter(m => m.reg_number).length}
+            </span>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="lg:col-span-2 space-y-4">
+            <div>
+              <h4 className="text-xs font-extrabold text-slate-800 uppercase tracking-wider">Sequential Member Growth</h4>
+              <p className="text-[11px] text-slate-500">Visualizing sequential registration numbers assigned and cumulative growth over time</p>
+            </div>
+            
+            <div className="h-72 w-full text-xs">
+              {registrationTrends.length === 0 ? (
+                <div className="h-full flex items-center justify-center text-slate-400">
+                  No member registration history found
+                </div>
+              ) : (
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={registrationTrends} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                    <defs>
+                      <linearGradient id="colorRegGrowth" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#2563eb" stopOpacity={0.4}/>
+                        <stop offset="95%" stopColor="#2563eb" stopOpacity={0.0}/>
+                      </linearGradient>
+                      <linearGradient id="colorNewReg" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#10b981" stopOpacity={0.4}/>
+                        <stop offset="95%" stopColor="#10b981" stopOpacity={0.0}/>
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                    <XAxis dataKey="monthLabel" stroke="#94a3b8" />
+                    <YAxis stroke="#94a3b8" />
+                    <Tooltip 
+                      contentStyle={{ background: '#0f172a', color: '#fff', borderRadius: '8px', border: 'none' }}
+                    />
+                    <Legend iconType="circle" />
+                    <Area type="monotone" name="Total Sequential IDs" dataKey="Total Congregants" stroke="#2563eb" strokeWidth={2.5} fillOpacity={1} fill="url(#colorRegGrowth)" />
+                    <Area type="monotone" name="New Registrations" dataKey="New Registrations" stroke="#10b981" strokeWidth={2} fillOpacity={1} fill="url(#colorNewReg)" />
+                  </AreaChart>
+                </ResponsiveContainer>
+              )}
+            </div>
+          </div>
+
+          {/* Quick Metrics Cards */}
+          <div className="space-y-4">
+            <div>
+              <h4 className="text-xs font-extrabold text-slate-800 uppercase tracking-wider">Sequential Highlights</h4>
+              <p className="text-[11px] text-slate-500">Key benchmarks tracked from registration identifiers</p>
+            </div>
+            
+            <div className="grid grid-cols-1 gap-3">
+              <div className="p-4 rounded-xl border border-slate-100 bg-slate-50/50 space-y-1">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Latest Registration No.</span>
+                <div className="flex items-baseline gap-1">
+                  <span className="text-xl font-black text-blue-900">
+                    {members
+                      .filter(m => m.reg_number)
+                      .map(m => m.reg_number)
+                      .sort()
+                      .pop() || '000'}
+                  </span>
+                  <span className="text-[10px] text-slate-400 font-medium">(Current Maximum Sequence)</span>
+                </div>
+              </div>
+
+              <div className="p-4 rounded-xl border border-slate-100 bg-slate-50/50 space-y-1">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Growth This Month</span>
+                <div className="flex items-baseline gap-1">
+                  <span className="text-xl font-black text-emerald-700">
+                    +{(() => {
+                      const currentMonthStr = new Date().toISOString().substring(0, 7); // YYYY-MM
+                      return members.filter(m => m.join_date && m.join_date.startsWith(currentMonthStr)).length;
+                    })()}
+                  </span>
+                  <span className="text-[10px] text-slate-400 font-medium">newly registered</span>
+                </div>
+              </div>
+
+              <div className="p-4 rounded-xl border border-slate-100 bg-slate-50/50 space-y-1">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Members With Active ID</span>
+                <div className="flex items-baseline gap-1">
+                  <span className="text-xl font-black text-indigo-700">
+                    {members.filter(m => m.reg_number).length}
+                  </span>
+                  <span className="text-[10px] text-slate-400 font-medium">of {members.length} total registry</span>
+                </div>
+              </div>
             </div>
           </div>
         </div>

@@ -33,12 +33,13 @@ import {
   Tooltip, 
   Legend 
 } from 'recharts';
-import { Contribution, Expenditure, Member } from '../types.js';
+import { Contribution, Expenditure, Member, CellGroup } from '../types.js';
 
 interface AdminFinancesProps {
   contributions: Contribution[];
   expenditures: Expenditure[];
   members: Member[];
+  cellGroups: CellGroup[];
   onRefresh: () => void;
   onAddContribution: (contrib: Partial<Contribution>) => Promise<any>;
   onDeleteContribution: (id: number) => Promise<any>;
@@ -58,6 +59,7 @@ export default function AdminFinances({
   contributions,
   expenditures,
   members,
+  cellGroups,
   onRefresh,
   onAddContribution,
   onDeleteContribution,
@@ -110,6 +112,7 @@ export default function AdminFinances({
   const [incomeDate, setIncomeDate] = useState(new Date().toISOString().split('T')[0]);
   const [incomeMethod, setIncomeMethod] = useState('M-Pesa');
   const [incomeError, setIncomeError] = useState('');
+  const [incomeCellGroupId, setIncomeCellGroupId] = useState('');
 
   // Auto-suggest fee amounts based on family role
   React.useEffect(() => {
@@ -138,6 +141,19 @@ export default function AdminFinances({
       }
     }
   }, [selectedMember, incomeType, isAnonymous]);
+
+  // Auto-fill cell group based on selected member
+  React.useEffect(() => {
+    if (!isAnonymous && selectedMember) {
+      if (selectedMember.cell_group_id) {
+        setIncomeCellGroupId(selectedMember.cell_group_id.toString());
+      } else {
+        setIncomeCellGroupId('');
+      }
+    } else {
+      setIncomeCellGroupId('');
+    }
+  }, [selectedMember, isAnonymous]);
 
   // Expense Form Fields
   const [expenseCategory, setExpenseCategory] = useState('Utilities');
@@ -237,7 +253,8 @@ export default function AdminFinances({
       amount: parseFloat(incomeAmount),
       type: incomeType,
       date: incomeDate || new Date().toISOString().split('T')[0],
-      payment_method: incomeMethod
+      payment_method: incomeMethod,
+      cell_group_id: incomeCellGroupId ? parseInt(incomeCellGroupId, 10) : null
     };
 
     try {
@@ -247,6 +264,7 @@ export default function AdminFinances({
       setSelectedMember(null);
       setMemberSearchTerm('');
       setIncomeAmount('');
+      setIncomeCellGroupId('');
       setIsAnonymous(false);
       onRefresh();
     } catch (err: any) {
@@ -775,13 +793,14 @@ export default function AdminFinances({
                     <th className="py-3 px-4">Date</th>
                     <th className="py-3 px-4">Method</th>
                     <th className="py-3 px-4">Branch Affiliation</th>
+                    <th className="py-3 px-4">Cell Group</th>
                     <th className="py-3 px-4 text-center w-16">Action</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {filteredContributions.length === 0 ? (
                     <tr>
-                      <td colSpan={8} className="py-8 px-4 text-center text-slate-400">
+                      <td colSpan={9} className="py-8 px-4 text-center text-slate-400">
                         No transactions registered
                       </td>
                     </tr>
@@ -809,6 +828,7 @@ export default function AdminFinances({
                         <td className="py-2.5 px-4 text-slate-500">{new Date(c.date).toLocaleDateString()}</td>
                         <td className="py-2.5 px-4 text-slate-600 font-medium">{c.payment_method}</td>
                         <td className="py-2.5 px-4 text-slate-500">{c.branch_name || '—'}</td>
+                        <td className="py-2.5 px-4 text-slate-600 font-medium text-amber-700">{c.cell_group_name || '—'}</td>
                         <td className="py-2.5 px-4 text-center">
                           <button 
                             onClick={() => handleDeleteContribution(c.id)}
@@ -1196,6 +1216,20 @@ export default function AdminFinances({
                     <option value="Cash">Cash</option>
                     <option value="Bank Transfer">Bank Transfer</option>
                     <option value="Cheque">Cheque</option>
+                  </select>
+                </div>
+
+                <div className="col-span-2 space-y-1">
+                  <label className="text-xs font-semibold text-slate-600">Home Cell Group (Optional)</label>
+                  <select
+                    value={incomeCellGroupId}
+                    onChange={(e) => setIncomeCellGroupId(e.target.value)}
+                    className="w-full border border-slate-200 rounded-lg p-2 text-xs text-slate-700 bg-white"
+                  >
+                    <option value="">-- Select Home Cell Group --</option>
+                    {cellGroups.map(cg => (
+                      <option key={cg.id} value={cg.id}>{cg.name} {cg.branch_name ? `(${cg.branch_name})` : ''}</option>
+                    ))}
                   </select>
                 </div>
 

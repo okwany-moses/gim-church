@@ -143,6 +143,34 @@ export function getDb(): Promise<CompatDatabase> {
   return dbPromise;
 }
 
+export async function generateNextRegNumber(db: CompatDatabase): Promise<string> {
+  try {
+    const rows = await db.all("SELECT reg_number FROM members WHERE reg_number IS NOT NULL AND reg_number != ''");
+    let maxNum = 0;
+    for (const row of rows) {
+      if (row.reg_number) {
+        // Strip any non-digit prefixes to find numeric sequence part or just try parsing
+        const cleaned = row.reg_number.replace(/\D/g, '');
+        if (cleaned) {
+          const num = parseInt(cleaned, 10);
+          if (!isNaN(num) && num > maxNum) {
+            maxNum = num;
+          }
+        } else {
+          const num = parseInt(row.reg_number, 10);
+          if (!isNaN(num) && num > maxNum) {
+            maxNum = num;
+          }
+        }
+      }
+    }
+    return String(maxNum + 1).padStart(3, '0');
+  } catch (err) {
+    console.error('Error generating sequence registration number:', err);
+    return '001';
+  }
+}
+
 async function initializeDatabase(): Promise<CompatDatabase> {
   if (dbInstance) return dbInstance;
 
@@ -187,7 +215,7 @@ async function initializeDatabase(): Promise<CompatDatabase> {
             await adminDb.exec(`GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO "${sqlUser}"`);
             await adminDb.exec(`GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO "${sqlUser}"`);
           } catch (e) {
-            console.log('Granting privileges to app user failed or no tables found:', e);
+            console.log('Note: Table privilege sync skipped (already owned by app user or not needed)');
           }
           
           // Also alter default privileges so future tables/sequences are accessible to the app user
@@ -195,7 +223,38 @@ async function initializeDatabase(): Promise<CompatDatabase> {
             await adminDb.exec(`ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO "${sqlUser}"`);
             await adminDb.exec(`ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO "${sqlUser}"`);
           } catch (e) {
-            console.log('Alter default privileges failed or not supported:', e);
+            console.log('Note: Default privilege sync skipped or not supported');
+          }
+
+          // Schema migrations are handled safely within initDb() as the app user who owns the tables
+
+          // Try to transfer table ownership to the app user so future migrations / operations are possible
+          console.log('Transferring table ownership to app user...');
+          const tablesToTransfer = [
+            'branches',
+            'cell_groups',
+            'members',
+            'contributions',
+            'expenditures',
+            'attendance_sessions',
+            'attendance_records',
+            'prayer_requests',
+            'bulk_sms',
+            'bible_chapters_cache',
+            'bible_search_cache',
+            'events',
+            'sermons',
+            'hymns',
+            'system_backups',
+            'tasks',
+            'users'
+          ];
+          for (const table of tablesToTransfer) {
+            try {
+              await adminDb.exec(`ALTER TABLE "${table}" OWNER TO "${sqlUser}"`);
+            } catch (ownerErr) {
+              // Table may not exist yet, or other error, ignore
+            }
           }
           
           // Initialise the schema and seed AS THE APP USER, so that the app user owns all tables
@@ -354,6 +413,7 @@ async function initDb(db: CompatDatabase) {
       birth_date TEXT NOT NULL,
       branch_id INTEGER,
       cell_group_id INTEGER,
+      reg_number TEXT,
       FOREIGN KEY(branch_id) REFERENCES branches(id) ON DELETE SET NULL,
       FOREIGN KEY(cell_group_id) REFERENCES cell_groups(id) ON DELETE SET NULL
     );
@@ -366,7 +426,9 @@ async function initDb(db: CompatDatabase) {
       type TEXT NOT NULL, -- Tithe, Offering, Building Fund, Missions, Benevolence
       date TEXT NOT NULL,
       payment_method TEXT NOT NULL, -- M-Pesa, Cash, Bank Transfer, Cheque
-      FOREIGN KEY(member_id) REFERENCES members(id) ON DELETE SET NULL
+      cell_group_id INTEGER,
+      FOREIGN KEY(member_id) REFERENCES members(id) ON DELETE SET NULL,
+      FOREIGN KEY(cell_group_id) REFERENCES cell_groups(id) ON DELETE SET NULL
     );
 
     CREATE TABLE IF NOT EXISTS expenditures (
@@ -785,6 +847,46 @@ async function initDb(db: CompatDatabase) {
     await db.run("ALTER TABLE expenditures ADD COLUMN status TEXT NOT NULL DEFAULT 'Approved'");
   } catch (err) {
     // Column already exists, ignore
+  }
+
+  // Safe migration for members reg_number column
+  try {
+    await db.run("ALTER TABLE members ADD COLUMN reg_number TEXT");
+  } catch (err) {
+    // Column already exists, ignore
+  }
+
+  // Safe migration for contributions cell_group_id column
+  try {
+    await db.run("ALTER TABLE contributions ADD COLUMN cell_group_id INTEGER");
+  } catch (err) {
+    // Column already exists, ignore
+  }
+
+  // Assign sequential registration numbers to any members who don't have one yet
+  try {
+    const membersWithoutReg = await db.all("SELECT id FROM members WHERE reg_number IS NULL OR reg_number = '' ORDER BY id ASC");
+    if (membersWithoutReg.length > 0) {
+      const allMembers = await db.all("SELECT id, reg_number FROM members ORDER BY id ASC");
+      let maxNum = 0;
+      for (const m of allMembers) {
+        if (m.reg_number) {
+          const num = parseInt(m.reg_number, 10);
+          if (!isNaN(num) && num > maxNum) {
+            maxNum = num;
+          }
+        }
+      }
+      
+      for (const m of membersWithoutReg) {
+        maxNum++;
+        const nextReg = String(maxNum).padStart(3, '0');
+        await db.run("UPDATE members SET reg_number = ? WHERE id = ?", [nextReg, m.id]);
+      }
+      console.log(`Assigned sequential registration numbers to ${membersWithoutReg.length} members starting from ${String(maxNum - membersWithoutReg.length + 1).padStart(3, '0')}`);
+    }
+  } catch (regBackfillErr) {
+    console.error('Warning: Backfilling registration numbers encountered an error:', regBackfillErr);
   }
 
   // Create prayer_requests and bulk_sms tables

@@ -13,11 +13,13 @@ import {
   Info,
   ChevronUp,
   AlertCircle,
-  Printer
+  Printer,
+  IdCard
 } from 'lucide-react';
 import Papa from 'papaparse';
 import { Member, Branch, CellGroup } from '../types.js';
 import ConfirmModal from './ConfirmModal.js';
+import MemberIdCardModal from './MemberIdCardModal.js';
 
 interface AdminMembersProps {
   members: Member[];
@@ -74,6 +76,10 @@ export default function AdminMembers({
   // Modals state
   const [isFormModalOpen, setIsFormModalOpen] = useState(false);
   const [editingMember, setEditingMember] = useState<Member | null>(null);
+
+  // ID Card Generator State
+  const [idCardMember, setIdCardMember] = useState<Member | null>(null);
+  const [isIdCardOpen, setIsIdCardOpen] = useState(false);
 
   // Form Fields
   const [formName, setFormName] = useState('');
@@ -188,24 +194,30 @@ export default function AdminMembers({
 
   // CSV Export
   const exportCSV = () => {
-    const dataToExport = filteredMembers.map(m => ({
-      'Name': m.name,
-      'Contact': m.contact,
-      'Join Date': m.join_date,
-      'Status': m.status,
-      'Gender': m.gender,
-      'Family Role': m.family_role,
-      'Birth Date': m.birth_date,
-      'Branch': m.branch_name || '',
-      'Cell Group': m.cell_group_name || ''
-    }));
+    const dataToExport = members.map(m => {
+      const branchName = m.branch_name || branches.find(b => b.id === m.branch_id)?.name || '';
+      const cellGroupName = m.cell_group_name || cellGroups.find(cg => cg.id === m.cell_group_id)?.name || '';
+      
+      return {
+        'Registration Number': m.reg_number || '',
+        'Name': m.name,
+        'Contact': m.contact,
+        'Join Date': m.join_date,
+        'Status': m.status,
+        'Gender': m.gender,
+        'Family Role': m.family_role,
+        'Birth Date': m.birth_date,
+        'Branch': branchName,
+        'Cell Group': cellGroupName
+      };
+    });
 
     const csv = Papa.unparse(dataToExport);
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.setAttribute('download', 'GIMK_Members_Export.csv');
+    link.setAttribute('download', 'GIMK_Full_Members_Export.csv');
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -311,6 +323,7 @@ export default function AdminMembers({
     const matchesSearch = 
       member.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       member.contact.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (member.reg_number && member.reg_number.toLowerCase().includes(searchTerm.toLowerCase())) ||
       (member.branch_name && member.branch_name.toLowerCase().includes(searchTerm.toLowerCase())) ||
       (member.cell_group_name && member.cell_group_name.toLowerCase().includes(searchTerm.toLowerCase()));
 
@@ -553,7 +566,16 @@ export default function AdminMembers({
                         className="rounded-sm border-slate-300 text-blue-600 focus:ring-blue-500"
                       />
                     </td>
-                    <td className="py-3 px-4 font-semibold text-slate-800">{member.name}</td>
+                    <td className="py-3 px-4 text-slate-800">
+                      <div className="flex flex-col">
+                        <span className="font-semibold">{member.name}</span>
+                        {member.reg_number && (
+                          <span className="inline-flex items-center text-[10px] text-blue-600 font-mono font-bold mt-0.5" title="Registration Number">
+                            ID: {member.reg_number}
+                          </span>
+                        )}
+                      </div>
+                    </td>
                     <td className="py-3 px-4 text-slate-600 font-mono">{member.contact}</td>
                     <td className="py-3 px-4 text-slate-500">{new Date(member.join_date).toLocaleDateString()}</td>
                     <td className="py-3 px-4 text-slate-600">{member.branch_name || '—'}</td>
@@ -572,6 +594,16 @@ export default function AdminMembers({
                     </td>
                     <td className="py-3 px-4 text-center">
                       <div className="flex items-center justify-center gap-1.5">
+                        <button
+                          onClick={() => {
+                            setIdCardMember(member);
+                            setIsIdCardOpen(true);
+                          }}
+                          className="p-1 hover:text-amber-600 text-slate-400 rounded-sm transition cursor-pointer"
+                          title="Generate printable Member ID Card"
+                        >
+                          <IdCard size={14} />
+                        </button>
                         <button
                           onClick={() => openEditModal(member)}
                           className="p-1 hover:text-blue-600 text-slate-400 rounded-sm transition cursor-pointer"
@@ -776,6 +808,19 @@ export default function AdminMembers({
         onConfirm={confirmModal.onConfirm}
         onCancel={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
       />
+
+      {idCardMember && (
+        <MemberIdCardModal
+          isOpen={isIdCardOpen}
+          member={idCardMember}
+          branches={branches}
+          cellGroups={cellGroups}
+          onClose={() => {
+            setIsIdCardOpen(false);
+            setIdCardMember(null);
+          }}
+        />
+      )}
     </div>
   );
 }
