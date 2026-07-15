@@ -18,7 +18,9 @@ import {
   Download,
   Laptop,
   Smartphone,
-  Share
+  Share,
+  ExternalLink,
+  AlertCircle
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { api } from './api.js';
@@ -91,8 +93,16 @@ export default function App() {
   const [isInstallable, setIsInstallable] = useState(false);
   const [isStandalone, setIsStandalone] = useState(false);
   const [showInstallModal, setShowInstallModal] = useState(false);
+  const [isInIframe, setIsInIframe] = useState(false);
 
   useEffect(() => {
+    // Check if running inside iframe
+    try {
+      setIsInIframe(window.self !== window.top);
+    } catch (e) {
+      setIsInIframe(true);
+    }
+
     const handleBeforeInstallPrompt = (e: any) => {
       // Prevent browser's default prompt
       e.preventDefault();
@@ -563,7 +573,13 @@ export default function App() {
                 <div className="flex items-center gap-2">
                   <h1 className="text-sm font-extrabold text-white uppercase tracking-tight leading-none">GIMK Portal</h1>
                   <button
-                    onClick={() => setShowInstallModal(true)}
+                    onClick={() => {
+                      if (isInstallable && deferredPrompt) {
+                        handleInstallApp();
+                      } else {
+                        setShowInstallModal(true);
+                      }
+                    }}
                     className="inline-flex items-center gap-1 bg-gradient-to-r from-amber-400 to-yellow-300 hover:from-amber-300 hover:to-yellow-200 text-slate-950 px-2 py-0.5 rounded-full text-[9px] font-extrabold tracking-wider uppercase transition cursor-pointer active:scale-95 select-none shadow-md"
                   >
                     <Download size={9} />
@@ -961,7 +977,13 @@ export default function App() {
           animate={{ opacity: 1, scale: 1, y: 0 }}
           whileHover={{ scale: 1.05 }}
           whileTap={{ scale: 0.95 }}
-          onClick={() => setShowInstallModal(true)}
+          onClick={() => {
+            if (isInstallable && deferredPrompt) {
+              handleInstallApp();
+            } else {
+              setShowInstallModal(true);
+            }
+          }}
           className="fixed bottom-6 right-6 md:bottom-8 md:right-8 bg-blue-600 hover:bg-blue-700 text-white font-bold p-3.5 md:py-3.5 md:px-5 rounded-full md:rounded-2xl shadow-2xl flex items-center gap-2.5 z-[150] cursor-pointer group active:scale-[0.98] border border-blue-500/30 transition-shadow hover:shadow-blue-500/20"
           title="Install GIMK Portal App"
         >
@@ -1063,7 +1085,24 @@ export default function App() {
 
               {/* Install action / instructions */}
               <div className="space-y-3 pt-2">
-                {isInstallable && deferredPrompt ? (
+                {isInIframe ? (
+                  <div className="space-y-3">
+                    <div className="bg-rose-50 border border-rose-100 text-rose-800 p-3.5 rounded-xl flex items-start gap-2.5 text-xs leading-relaxed">
+                      <AlertCircle className="text-rose-600 shrink-0 mt-0.5" size={16} />
+                      <div>
+                        <strong className="font-extrabold block mb-0.5">Browser Sandbox Limitation</strong>
+                        <span>Because you are currently viewing GIMK inside an iframe (AI Studio preview frame), your browser security strictly blocks direct PWA installations. You must launch the portal in a new standalone tab first!</span>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => window.open(window.location.href, '_blank')}
+                      className="w-full bg-blue-600 hover:bg-blue-700 text-white py-2.5 rounded-xl text-xs font-extrabold uppercase tracking-wider transition cursor-pointer select-none shadow-md flex items-center justify-center gap-2 active:scale-[0.98]"
+                    >
+                      <ExternalLink size={14} />
+                      <span>Open in New Tab to Install</span>
+                    </button>
+                  </div>
+                ) : isInstallable && deferredPrompt ? (
                   <button
                     onClick={handleInstallApp}
                     className="w-full bg-blue-600 hover:bg-blue-700 text-white py-2.5 rounded-xl text-xs font-extrabold uppercase tracking-wider transition cursor-pointer select-none shadow-md flex items-center justify-center gap-2 active:scale-[0.98]"
@@ -1077,7 +1116,7 @@ export default function App() {
                       <Smartphone size={16} className="text-amber-600 mt-0.5 shrink-0" />
                       <div>
                         <strong className="text-slate-800 block mb-0.5">iOS / Safari Users:</strong>
-                        <span>Tap the Share button <span className="font-bold"></span> at the bottom/top of Safari, and select <strong className="text-slate-800">Add to Home Screen</strong>.</span>
+                        <span>Tap the Share button at the bottom/top of Safari, and select <strong className="text-slate-800">Add to Home Screen</strong>.</span>
                       </div>
                     </div>
                     <div className="w-full h-px bg-slate-200/50" />
