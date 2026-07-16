@@ -20,7 +20,10 @@ import {
   Smartphone,
   Share,
   ExternalLink,
-  AlertCircle
+  AlertCircle,
+  CheckCircle,
+  AlertTriangle,
+  RefreshCw
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { api } from './api.js';
@@ -95,6 +98,11 @@ export default function App() {
   const [isInIframe, setIsInIframe] = useState(false);
   const [showInstallModal, setShowInstallModal] = useState<boolean>(false);
 
+  // Real-time PWA Diagnostics States
+  const [swRegistered, setSwRegistered] = useState<boolean>(false);
+  const [swActive, setSwActive] = useState<boolean>(false);
+  const [hasManifest, setHasManifest] = useState<boolean>(false);
+
   useEffect(() => {
     // Check if running inside iframe
     try {
@@ -128,14 +136,35 @@ export default function App() {
       setIsInstallable(false);
     }
 
-    // Aggressive periodic & reactive stashed event check
+    // Aggressive periodic & reactive stashed event check and PWA diagnostics
     const syncStashedPrompt = () => {
       const globalPrompt = (window as any).deferredPrompt;
       if (globalPrompt && !deferredPrompt) {
         setDeferredPrompt(globalPrompt);
         setIsInstallable(true);
       }
+
+      // Query manifest link presence
+      setHasManifest(!!document.querySelector('link[rel="manifest"]'));
+
+      // Query active Service Worker state
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.getRegistration()
+          .then((reg) => {
+            if (reg) {
+              setSwRegistered(true);
+              setSwActive(!!reg.active);
+            } else {
+              setSwRegistered(false);
+              setSwActive(false);
+            }
+          })
+          .catch(() => {});
+      }
     };
+
+    // Run diagnostics immediately
+    syncStashedPrompt();
 
     // Sync on window focus (user returning to tab)
     window.addEventListener('focus', syncStashedPrompt);
@@ -1141,6 +1170,123 @@ export default function App() {
                     </div>
                   </div>
                 )}
+
+                {/* Real-time Diagnostics Monitor */}
+                <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 text-slate-100 space-y-3.5">
+                  <div className="flex items-center justify-between">
+                    <h5 className="text-[10px] font-extrabold text-blue-400 uppercase tracking-wider flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse inline-block" />
+                      PWA Compliance Diagnostics
+                    </h5>
+                    <button
+                      onClick={() => {
+                        const globalPrompt = (window as any).deferredPrompt;
+                        if (globalPrompt) {
+                          setDeferredPrompt(globalPrompt);
+                          setIsInstallable(true);
+                        }
+                        setHasManifest(!!document.querySelector('link[rel="manifest"]'));
+                        if ('serviceWorker' in navigator) {
+                          navigator.serviceWorker.getRegistration()
+                            .then((reg) => {
+                              if (reg) {
+                                setSwRegistered(true);
+                                setSwActive(!!reg.active);
+                              } else {
+                                setSwRegistered(false);
+                                setSwActive(false);
+                              }
+                            });
+                        }
+                      }}
+                      className="text-[10px] bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold px-2.5 py-1 rounded-md flex items-center gap-1 cursor-pointer transition active:scale-95"
+                    >
+                      <RefreshCw size={10} />
+                      Scan Engine
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3 text-xs">
+                    <div className="flex items-center justify-between bg-slate-950/50 p-2.5 rounded-lg border border-slate-800/60">
+                      <span className="text-slate-400 text-[11px]">Connection:</span>
+                      {window.location.protocol === 'https:' || window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' ? (
+                        <span className="text-emerald-400 font-bold flex items-center gap-1">
+                          <CheckCircle size={12} /> HTTPS
+                        </span>
+                      ) : (
+                        <span className="text-amber-400 font-bold flex items-center gap-1">
+                          <AlertTriangle size={12} /> Unsecured
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="flex items-center justify-between bg-slate-950/50 p-2.5 rounded-lg border border-slate-800/60">
+                      <span className="text-slate-400 text-[11px]">Manifest:</span>
+                      {hasManifest ? (
+                        <span className="text-emerald-400 font-bold flex items-center gap-1">
+                          <CheckCircle size={12} /> Linked
+                        </span>
+                      ) : (
+                        <span className="text-rose-400 font-bold flex items-center gap-1">
+                          <AlertTriangle size={12} /> Missing
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="flex items-center justify-between bg-slate-950/50 p-2.5 rounded-lg border border-slate-800/60">
+                      <span className="text-slate-400 text-[11px]">Worker:</span>
+                      {swRegistered ? (
+                        <span className="text-emerald-400 font-bold flex items-center gap-1">
+                          <CheckCircle size={12} /> Registered
+                        </span>
+                      ) : (
+                        <span className="text-rose-400 font-bold flex items-center gap-1">
+                          <AlertTriangle size={12} /> Missing
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="flex items-center justify-between bg-slate-950/50 p-2.5 rounded-lg border border-slate-800/60">
+                      <span className="text-slate-400 text-[11px]">Status:</span>
+                      {swActive ? (
+                        <span className="text-emerald-400 font-bold flex items-center gap-1">
+                          <CheckCircle size={12} /> Active
+                        </span>
+                      ) : (
+                        <span className="text-amber-400 font-bold flex items-center gap-1">
+                          <AlertTriangle size={12} /> Pending
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="bg-slate-950/40 p-3 rounded-lg border border-slate-800/50 text-[11px] leading-relaxed space-y-2">
+                    <div className="flex items-center gap-2">
+                      <span className="font-semibold text-slate-300 text-[11px]">Install Prompt state:</span>
+                      {deferredPrompt ? (
+                        <span className="text-emerald-400 font-bold flex items-center gap-1 bg-emerald-500/10 px-1.5 py-0.5 rounded text-[10px]">
+                          <CheckCircle size={11} /> Ready
+                        </span>
+                      ) : (
+                        <span className="text-amber-400 font-bold flex items-center gap-1 bg-amber-500/10 px-1.5 py-0.5 rounded text-[10px]">
+                          <AlertTriangle size={11} /> Pending / Cooldown
+                        </span>
+                      )}
+                    </div>
+
+                    {!deferredPrompt && (
+                      <p className="text-slate-400">
+                        <strong>Chrome Prompt Cooldown Active?</strong> Chrome blocks prompts if previously dismissed. To bypass this and force the address-bar install icon / star to appear:
+                        <br />
+                        <span className="text-blue-400 block mt-1.5">
+                          ➔ Open GIMK in a new <strong>Incognito Window</strong>.
+                          <br />
+                          ➔ Or in DevTools (F12) ➔ Application ➔ Storage ➔ Click <strong>Clear Site Data</strong>, then refresh.
+                        </span>
+                      </p>
+                    )}
+                  </div>
+                </div>
 
                 {/* Platform Selection Guides */}
                 <div className="space-y-4">
