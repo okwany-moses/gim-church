@@ -130,10 +130,19 @@ export default function App() {
     };
 
     // Check if already in standalone/PWA mode
+    let autoOpenTimer: any = null;
     const isStandaloneMode = window.matchMedia('(display-mode: standalone)').matches || (navigator as any).standalone;
     setIsStandalone(!!isStandaloneMode);
     if (isStandaloneMode) {
       setIsInstallable(false);
+    } else {
+      // Auto-open install guide so user can install immediately upon landing without clicking any button
+      const hasDismissed = localStorage.getItem('gimk_install_prompt_dismissed');
+      if (!hasDismissed) {
+        autoOpenTimer = setTimeout(() => {
+          setShowInstallModal(true);
+        }, 1200);
+      }
     }
 
     // Aggressive periodic & reactive stashed event check and PWA diagnostics
@@ -198,6 +207,7 @@ export default function App() {
       document.removeEventListener('touchstart', handleGestureSync);
       clearInterval(intervalId);
       clearTimeout(timeoutId);
+      if (autoOpenTimer) clearTimeout(autoOpenTimer);
       delete (window as any).onBeforeInstallPromptTriggered;
     };
   }, [deferredPrompt]);
@@ -227,6 +237,11 @@ export default function App() {
 
     // If no native prompt exists yet, show our advanced visual guide modal
     setShowInstallModal(true);
+  };
+
+  const handleCloseInstallModal = () => {
+    setShowInstallModal(false);
+    localStorage.setItem('gimk_install_prompt_dismissed', 'true');
   };
 
   // Toast Notification State
@@ -1105,7 +1120,7 @@ export default function App() {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              onClick={() => setShowInstallModal(false)}
+              onClick={handleCloseInstallModal}
               className="absolute inset-0 bg-slate-950/75 backdrop-blur-sm"
             />
 
@@ -1129,7 +1144,7 @@ export default function App() {
                   </div>
                 </div>
                 <button
-                  onClick={() => setShowInstallModal(false)}
+                  onClick={handleCloseInstallModal}
                   className="text-slate-400 hover:text-white bg-white/5 hover:bg-white/10 p-2 rounded-full transition cursor-pointer"
                 >
                   <X size={16} />
@@ -1366,7 +1381,7 @@ export default function App() {
               {/* Footer */}
               <div className="bg-slate-50 border-t border-slate-100 p-4 flex items-center justify-end gap-3">
                 <button
-                  onClick={() => setShowInstallModal(false)}
+                  onClick={handleCloseInstallModal}
                   className="bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-bold uppercase tracking-wider px-4 py-2.5 rounded-xl cursor-pointer transition active:scale-95"
                 >
                   Dismiss
