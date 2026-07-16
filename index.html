@@ -64,9 +64,29 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>GIMK Church Management System</title>
-    <link rel="manifest" href="/manifest.json" />
-    <link rel="icon" type="image/png" href="/logo-192.png" />
-    <link rel="apple-touch-icon" href="/logo-192.png" />
+    <script id="pwa-resource-loader">
+      (function() {
+        var pathname = window.location.pathname || '/';
+        var match = pathname.match(/^\/ais-[^\/]+\//);
+        var basePath = match ? match[0] : '/';
+
+        var manifestLink = document.createElement('link');
+        manifestLink.rel = 'manifest';
+        manifestLink.href = basePath + 'manifest.json';
+        document.head.appendChild(manifestLink);
+
+        var favIcon = document.createElement('link');
+        favIcon.rel = 'icon';
+        favIcon.type = 'image/png';
+        favIcon.href = basePath + 'logo-192.png';
+        document.head.appendChild(favIcon);
+
+        var appleIcon = document.createElement('link');
+        appleIcon.rel = 'apple-touch-icon';
+        appleIcon.href = basePath + 'logo-192.png';
+        document.head.appendChild(appleIcon);
+      })();
+    </script>
     <meta name="theme-color" content="#0f172a" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />

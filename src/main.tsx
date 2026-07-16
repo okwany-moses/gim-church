@@ -62,10 +62,12 @@ createRoot(document.getElementById('root')!).render(
 // Register Service Worker for PWA installability
 if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
   const registerSW = () => {
-    const isAISPreview = window.location.pathname.includes('/ais-') || window.location.host.includes('europe-west2.run.app');
-    const swUrl = isAISPreview ? './sw.js' : '/sw.js';
+    const pathname = window.location.pathname || '/';
+    const match = pathname.match(/^\/ais-[^\/]+\//);
+    const basePath = match ? match[0] : '/';
+    const swUrl = basePath + 'sw.js';
 
-    navigator.serviceWorker.register(swUrl)
+    navigator.serviceWorker.register(swUrl, { scope: basePath })
       .then((registration) => {
         console.log('PWA ServiceWorker registered successfully with scope: ', registration.scope);
         // Force immediate check for Service Worker updates to refresh cache strategies
