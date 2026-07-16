@@ -93,6 +93,7 @@ export default function App() {
   const [isInstallable, setIsInstallable] = useState(!!(window as any).deferredPrompt || true); // Default to true so user can always attempt/click install
   const [isStandalone, setIsStandalone] = useState(false);
   const [isInIframe, setIsInIframe] = useState(false);
+  const [showInstallModal, setShowInstallModal] = useState<boolean>(false);
 
   useEffect(() => {
     // Check if running inside iframe
@@ -174,8 +175,8 @@ export default function App() {
 
   const handleInstallClick = async () => {
     if (isInIframe) {
-      // Iframe sandbox blocks direct install. Instantly open in a new tab where PWA prompt works
-      window.open(window.location.href, '_blank');
+      // Show PWA install guide modal which explains how to bypass the iframe sandbox
+      setShowInstallModal(true);
       return;
     }
 
@@ -190,30 +191,13 @@ export default function App() {
         setIsInstallable(false);
       } catch (err) {
         console.error('PWA install prompt failed:', err);
+        setShowInstallModal(true);
       }
       return;
     }
 
-    // Smart fallback detection for different platforms and browsers
-    const userAgent = navigator.userAgent || '';
-    const isIOS = /iPad|iPhone|iPod/.test(userAgent) && !(window as any).MSStream;
-    const isSafari = /^((?!chrome|android).)*safari/i.test(userAgent);
-    const isAndroid = /Android/i.test(userAgent);
-
-    if (isIOS) {
-      showToast("To install GIMK on iOS: Tap 'Share' (square with arrow up) in Safari, then select 'Add to Home Screen'!");
-    } else if (isSafari) {
-      showToast("To install GIMK on Safari: Click 'File' > 'Add to Dock...' or 'Share' > 'Add to Home Screen'!");
-    } else if (isAndroid) {
-      showToast("To install GIMK: Tap your browser's menu (three dots) in the top right, and select 'Install app' or 'Add to Home screen'!");
-    } else {
-      showToast("To install GIMK: Click the 'Install App' icon in the address bar (next to the bookmark star), or select 'Install' from your browser menu!");
-    }
-
-    // Refresh stashed prompt reference in case of late load
-    if ((window as any).deferredPrompt) {
-      setDeferredPrompt((window as any).deferredPrompt);
-    }
+    // If no native prompt exists yet, show our advanced visual guide modal
+    setShowInstallModal(true);
   };
 
   // Toast Notification State
@@ -1082,6 +1066,181 @@ export default function App() {
           }}
         />
       )}
+
+      {/* Elegant PWA Install Guide Modal */}
+      <AnimatePresence>
+        {showInstallModal && (
+          <div className="fixed inset-0 z-[250] flex items-center justify-center p-4">
+            {/* Backdrop */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowInstallModal(false)}
+              className="absolute inset-0 bg-slate-950/75 backdrop-blur-sm"
+            />
+
+            {/* Modal Body */}
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0, y: 15 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.95, opacity: 0, y: 15 }}
+              transition={{ type: "spring", duration: 0.5 }}
+              className="relative bg-white dark:bg-slate-900 w-full max-w-xl rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col z-10 max-h-[90vh]"
+            >
+              {/* Header */}
+              <div className="bg-gradient-to-r from-slate-900 via-blue-950 to-slate-900 p-6 text-white flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="bg-blue-600/20 p-2.5 rounded-xl border border-blue-500/30">
+                    <Download className="text-amber-400 animate-pulse" size={24} />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-bold tracking-tight uppercase">Install GIMK Portal App</h3>
+                    <p className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider mt-0.5">Run GIMK on your Home Screen or Desktop</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setShowInstallModal(false)}
+                  className="text-slate-400 hover:text-white bg-white/5 hover:bg-white/10 p-2 rounded-full transition cursor-pointer"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+
+              {/* Scrollable Content */}
+              <div className="p-6 overflow-y-auto space-y-6">
+                {/* Iframe detection alert */}
+                {isInIframe ? (
+                  <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex gap-3">
+                    <AlertCircle className="text-amber-600 shrink-0 mt-0.5" size={20} />
+                    <div className="space-y-2">
+                      <p className="text-xs font-bold text-amber-900 uppercase tracking-wide">Inside Workspace Preview Frame</p>
+                      <p className="text-xs text-amber-800 leading-relaxed">
+                        Your browser <strong>completely blocks</strong> PWA installation inside iframe editors. To install GIMK as an app on your device, you must open it in a direct top-level browser tab first!
+                      </p>
+                      <button
+                        onClick={() => {
+                          window.open(window.location.href, '_blank');
+                          setShowInstallModal(false);
+                        }}
+                        className="inline-flex items-center gap-2 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white font-extrabold text-[10px] tracking-wider uppercase px-4 py-2 rounded-lg shadow-sm cursor-pointer transition active:scale-95"
+                      >
+                        <ExternalLink size={12} />
+                        <span>Open in New Tab & Install</span>
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-4 flex gap-3">
+                    <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping mt-1 shrink-0" />
+                    <div>
+                      <p className="text-xs font-bold text-emerald-900 uppercase tracking-wide">Top-Level Window Active</p>
+                      <p className="text-xs text-emerald-800 leading-relaxed">
+                        Ready to install! If you don't see the default address-bar prompt, select your platform below for easy manual trigger guides.
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Platform Selection Guides */}
+                <div className="space-y-4">
+                  <h4 className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Device Guides & Troubleshooting</h4>
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    {/* Desktop Tab */}
+                    <div className="border border-slate-200 hover:border-blue-400 rounded-xl p-3.5 space-y-2.5 bg-slate-50 transition">
+                      <div className="flex items-center gap-2 text-slate-800">
+                        <Laptop size={16} className="text-blue-600 shrink-0" />
+                        <span className="text-xs font-bold uppercase tracking-wide">Desktop</span>
+                      </div>
+                      <div className="text-[11px] text-slate-500 leading-relaxed space-y-2">
+                        <p>
+                          1. Look at your <strong>browser URL bar</strong> (top).
+                        </p>
+                        <p>
+                          2. Click the <strong>Install Icon</strong> <span className="font-mono bg-slate-200 text-slate-800 px-1 py-0.5 rounded text-[9px]">⊕</span> right next to the bookmark star.
+                        </p>
+                        <p>
+                          3. Alternatively, click the browser's <strong>3-dots menu</strong> ➔ <strong>Save and share</strong> ➔ <strong>Install App</strong>.
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* iOS Tab */}
+                    <div className="border border-slate-200 hover:border-blue-400 rounded-xl p-3.5 space-y-2.5 bg-slate-50 transition">
+                      <div className="flex items-center gap-2 text-slate-800">
+                        <Smartphone size={16} className="text-blue-600 shrink-0" />
+                        <span className="text-xs font-bold uppercase tracking-wide">iOS Safari</span>
+                      </div>
+                      <div className="text-[11px] text-slate-500 leading-relaxed space-y-2">
+                        <p>
+                          1. Open this link in your <strong>Safari Browser</strong>.
+                        </p>
+                        <p>
+                          2. Tap the <strong>Share</strong> icon <Share size={10} className="inline mx-0.5" /> (square with up arrow).
+                        </p>
+                        <p>
+                          3. Scroll down and tap <strong>Add to Home Screen</strong>.
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Android Tab */}
+                    <div className="border border-slate-200 hover:border-blue-400 rounded-xl p-3.5 space-y-2.5 bg-slate-50 transition">
+                      <div className="flex items-center gap-2 text-slate-800">
+                        <Smartphone size={16} className="text-blue-600 shrink-0" />
+                        <span className="text-xs font-bold uppercase tracking-wide">Android Chrome</span>
+                      </div>
+                      <div className="text-[11px] text-slate-500 leading-relaxed space-y-2">
+                        <p>
+                          1. Tap the <strong>three dots</strong> menu <span className="font-bold text-slate-700">⋮</span> in the top-right.
+                        </p>
+                        <p>
+                          2. Select <strong>Install App</strong> or <strong>Add to Home Screen</strong>.
+                        </p>
+                        <p>
+                          3. Click <strong>Install</strong> to confirm.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Benefits */}
+                <div className="bg-slate-50 rounded-xl p-4 border border-slate-200/60">
+                  <h5 className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider mb-2">PWA Installed Benefits</h5>
+                  <ul className="text-[11px] text-slate-600 space-y-1.5 list-disc pl-4 leading-relaxed">
+                    <li>Launch GIMK full-screen from your desktop, dock, or home screen without the browser URL bar.</li>
+                    <li>Highly secure, sandbox-isolated local experience.</li>
+                    <li>Instant load times with optimized client caching.</li>
+                  </ul>
+                </div>
+              </div>
+
+              {/* Footer */}
+              <div className="bg-slate-50 border-t border-slate-100 p-4 flex items-center justify-end gap-3">
+                <button
+                  onClick={() => setShowInstallModal(false)}
+                  className="bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-bold uppercase tracking-wider px-4 py-2.5 rounded-xl cursor-pointer transition active:scale-95"
+                >
+                  Dismiss
+                </button>
+                {isInIframe && (
+                  <button
+                    onClick={() => {
+                      window.open(window.location.href, '_blank');
+                      setShowInstallModal(false);
+                    }}
+                    className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold uppercase tracking-wider px-4 py-2.5 rounded-xl cursor-pointer transition active:scale-95 shadow-md shadow-blue-500/10"
+                  >
+                    Open in New Tab
+                  </button>
+                )}
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
