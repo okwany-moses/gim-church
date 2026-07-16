@@ -1,4 +1,4 @@
-const CACHE_NAME = 'gimk-portal-v5';
+const CACHE_NAME = 'gimk-portal-v6';
 const ASSETS_TO_CACHE = [
   './',
   './index.html',
@@ -14,9 +14,22 @@ self.addEventListener('install', (event) => {
     caches.open(CACHE_NAME).then((cache) => {
       console.log('[Service Worker] Resiliently pre-caching app shell assets...');
       const cachePromises = ASSETS_TO_CACHE.map((asset) => {
-        return cache.add(asset).catch((err) => {
-          console.warn(`[Service Worker] Skipping cache-fail for optional asset "${asset}":`, err);
-        });
+        return fetch(asset)
+          .then((response) => {
+            if (!response.ok) {
+              throw new Error(`Failed to fetch static asset: status ${response.status}`);
+            }
+            // Safeguard: Do not cache HTML responses for non-HTML static assets
+            const contentType = response.headers.get('content-type') || '';
+            const isHTMLAsset = asset === './' || asset === './index.html';
+            if (!isHTMLAsset && contentType.includes('text/html')) {
+              throw new Error(`Blocked caching HTML response for non-HTML asset "${asset}"`);
+            }
+            return cache.put(asset, response);
+          })
+          .catch((err) => {
+            console.warn(`[Service Worker] Skipping cache for asset "${asset}":`, err.message);
+          });
       });
       return Promise.all(cachePromises);
     }).then(() => self.skipWaiting())
@@ -30,6 +43,7 @@ self.addEventListener('activate', (event) => {
       return Promise.all(
         cacheNames.map((cache) => {
           if (cache !== CACHE_NAME) {
+            console.log('[Service Worker] Clearing stale cache:', cache);
             return caches.delete(cache);
           }
         })
@@ -38,7 +52,7 @@ self.addEventListener('activate', (event) => {
   );
 });
 
-// Fetch Event with Stale-While-Revalidate caching strategy
+// Fetch Event with Stale-While-Revalidate caching strategy and HTML response safeguards
 self.addEventListener('fetch', (event) => {
   // Only cache GET requests and skip API requests or non-http protocols
   if (event.request.method !== 'GET' || event.request.url.includes('/api/') || !event.request.url.startsWith('http')) {
@@ -53,7 +67,12 @@ self.addEventListener('fetch', (event) => {
         fetch(event.request)
           .then((networkResponse) => {
             if (networkResponse.status === 200) {
-              caches.open(CACHE_NAME).then((cache) => cache.put(event.request, networkResponse));
+              const contentType = networkResponse.headers.get('content-type') || '';
+              const isHTML = contentType.includes('text/html');
+              // Only put in cache if it's not HTML, or if it is a deliberate navigation request
+              if (!isHTML || event.request.mode === 'navigate') {
+                caches.open(CACHE_NAME).then((cache) => cache.put(event.request, networkResponse));
+              }
             }
           })
           .catch(() => { /* Ignore background update failures */ });
@@ -61,7 +80,20 @@ self.addEventListener('fetch', (event) => {
       }
 
       return fetch(event.request).then((networkResponse) => {
-        if (!networkResponse || networkResponse.status !== 200 || networkResponse.type !== 'basic') {
+        if (!networkResponse || networkResponse.status !== 200) {
+          return networkResponse;
+        }
+
+        // Safeguard: Do not cache HTML responses for non-navigation/static asset requests
+        const contentType = networkResponse.headers.get('content-type') || '';
+        const isHTML = contentType.includes('text/html');
+        const isNavigation = event.request.mode === 'navigate';
+        if (isHTML && !isNavigation) {
+          return networkResponse; // Serve directly but do not cache
+        }
+
+        // Accept and cache same-origin (basic) and cross-origin (cors) assets
+        if (networkResponse.type !== 'basic' && networkResponse.type !== 'cors') {
           return networkResponse;
         }
 
