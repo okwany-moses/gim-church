@@ -89,8 +89,8 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
 
   // PWA Install Prompt State
-  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
-  const [isInstallable, setIsInstallable] = useState(false);
+  const [deferredPrompt, setDeferredPrompt] = useState<any>((window as any).deferredPrompt || null);
+  const [isInstallable, setIsInstallable] = useState(!!(window as any).deferredPrompt);
   const [isStandalone, setIsStandalone] = useState(false);
   const [showInstallModal, setShowInstallModal] = useState(false);
   const [isInIframe, setIsInIframe] = useState(false);
@@ -108,11 +108,18 @@ export default function App() {
       e.preventDefault();
       // Stash the event
       setDeferredPrompt(e);
+      (window as any).deferredPrompt = e;
       // Update state to render button
       setIsInstallable(true);
     };
 
     window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+
+    // Register global trigger handler in case the event was caught early or is caught later
+    (window as any).onBeforeInstallPromptTriggered = (e: any) => {
+      setDeferredPrompt(e);
+      setIsInstallable(true);
+    };
 
     // Check if already in standalone/PWA mode
     const isStandaloneMode = window.matchMedia('(display-mode: standalone)').matches || (navigator as any).standalone;
@@ -125,6 +132,7 @@ export default function App() {
       setIsInstallable(false);
       setIsStandalone(true);
       setDeferredPrompt(null);
+      (window as any).deferredPrompt = null;
       showToast('GIMK App installed successfully! Access it directly from your home screen.');
     };
 
@@ -133,6 +141,7 @@ export default function App() {
     return () => {
       window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
       window.removeEventListener('appinstalled', handleAppInstalled);
+      delete (window as any).onBeforeInstallPromptTriggered;
     };
   }, []);
 
@@ -1111,21 +1120,33 @@ export default function App() {
                     <span>Install App Now</span>
                   </button>
                 ) : (
-                  <div className="space-y-3 text-xs text-slate-600 leading-relaxed bg-amber-50/50 p-4 rounded-xl border border-amber-100/60">
+                  <div className="space-y-3 text-xs text-slate-600 leading-relaxed bg-amber-50/40 p-4 rounded-xl border border-amber-100/50">
+                    <div className="flex items-start gap-2.5">
+                      <Smartphone size={16} className="text-amber-600 mt-0.5 shrink-0" />
+                      <div>
+                        <strong className="text-slate-800 block mb-0.5">Mobile Browsers (Chrome / Android / Firefox):</strong>
+                        <span>Tap the <strong className="text-slate-800">three dots (menu)</strong> in the top-right corner of your browser, and select <strong className="text-slate-800">Install app</strong> or <strong className="text-slate-800">Add to Home screen</strong>.</span>
+                      </div>
+                    </div>
+                    <div className="w-full h-px bg-slate-200/40" />
                     <div className="flex items-start gap-2.5">
                       <Smartphone size={16} className="text-amber-600 mt-0.5 shrink-0" />
                       <div>
                         <strong className="text-slate-800 block mb-0.5">iOS / Safari Users:</strong>
-                        <span>Tap the Share button at the bottom/top of Safari, and select <strong className="text-slate-800">Add to Home Screen</strong>.</span>
+                        <span>Tap the <strong className="text-slate-800">Share</strong> button at the bottom/top of Safari, and select <strong className="text-slate-800">Add to Home Screen</strong>.</span>
                       </div>
                     </div>
-                    <div className="w-full h-px bg-slate-200/50" />
+                    <div className="w-full h-px bg-slate-200/40" />
                     <div className="flex items-start gap-2.5">
                       <Laptop size={16} className="text-amber-600 mt-0.5 shrink-0" />
                       <div>
                         <strong className="text-slate-800 block mb-0.5">Desktop Users:</strong>
-                        <span>Click the <strong className="text-slate-800">Install app</strong> icon in your browser's address bar (next to the star/bookmark button).</span>
+                        <span>Click the <strong className="text-slate-800">Install app</strong> icon in your browser's address bar (next to the star/bookmark button), or open your browser's main menu and click <strong className="text-slate-800">Save and share &gt; Install page</strong>.</span>
                       </div>
+                    </div>
+                    <div className="w-full h-px bg-slate-200/40" />
+                    <div className="text-[10px] text-slate-400 italic font-medium leading-normal text-center pt-0.5">
+                      Tip: If direct installation is not showing, please wait a couple of seconds for the background service worker to register completely, or use the browser menu options mentioned above!
                     </div>
                   </div>
                 )}

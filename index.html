@@ -50,6 +50,16 @@
           }
         }, true);
       })();
+
+      // Early stashing of beforeinstallprompt event to guarantee zero missing events during React bundle boot
+      window.deferredPrompt = null;
+      window.addEventListener('beforeinstallprompt', function(e) {
+        e.preventDefault();
+        window.deferredPrompt = e;
+        if (window.onBeforeInstallPromptTriggered) {
+          window.onBeforeInstallPromptTriggered(e);
+        }
+      });
     </script>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
