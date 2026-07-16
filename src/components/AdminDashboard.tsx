@@ -22,7 +22,9 @@ import {
   Wrench,
   Sparkles,
   Check,
-  X
+  X,
+  Link,
+  Music
 } from 'lucide-react';
 import { 
   ResponsiveContainer, 
@@ -96,6 +98,11 @@ export default function AdminDashboard({
 }: AdminDashboardProps) {
   const [attendanceChartType, setAttendanceChartType] = useState<'bar' | 'area'>('area');
   
+  // Songbook setting states
+  const [songbookUrl, setSongbookUrl] = useState<string>('');
+  const [isSavingSongbook, setIsSavingSongbook] = useState<boolean>(false);
+  const [songbookSuccessMessage, setSongbookSuccessMessage] = useState<string>('');
+
   // Permissions checks for RBAC
   const canDelete = permissions?.canDelete ?? (role === 'admin');
   const canExport = permissions?.canExport ?? (role === 'admin');
@@ -350,7 +357,46 @@ export default function AdminDashboard({
 
   useEffect(() => {
     loadTasks();
+    // Load global songbook setting
+    api.getSetting('songbook_pdf_url')
+      .then(res => {
+        if (res && res.value) {
+          setSongbookUrl(res.value);
+        }
+      })
+      .catch(err => console.error('Error loading songbook setting:', err));
   }, []);
+
+  const handleSaveSongbookUrl = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSavingSongbook(true);
+    setSongbookSuccessMessage('');
+    try {
+      let formattedUrl = songbookUrl.trim();
+      // Auto-convert standard Google Drive URLs to their /preview counterparts for safe embedding
+      let driveIdMatch = formattedUrl.match(/\/file\/d\/([a-zA-Z0-9_-]+)/) || 
+                         formattedUrl.match(/[?&]id=([a-zA-Z0-9_-]+)/) ||
+                         formattedUrl.match(/\/d\/([a-zA-Z0-9_-]+)/);
+                         
+      if (driveIdMatch && (formattedUrl.includes('drive.google.com') || formattedUrl.includes('docs.google.com'))) {
+        const fileId = driveIdMatch[1];
+        formattedUrl = `https://drive.google.com/file/d/${fileId}/preview`;
+      }
+
+      await api.setSetting('songbook_pdf_url', formattedUrl);
+      setSongbookUrl(formattedUrl);
+      
+      // Save locally as backup for offline seamlessness
+      localStorage.setItem('gimk_songbook_pdf', formattedUrl);
+      
+      setSongbookSuccessMessage('Hymnal PDF link successfully configured and saved globally!');
+      setTimeout(() => setSongbookSuccessMessage(''), 4000);
+    } catch (err: any) {
+      console.error('Failed to save songbook URL setting:', err);
+    } finally {
+      setIsSavingSongbook(false);
+    }
+  };
 
   // Form Handlers
   const handleCreateOrUpdateTask = async (e: React.FormEvent) => {
@@ -1224,89 +1270,144 @@ export default function AdminDashboard({
           </div>
         </div>
 
-        {/* RIGHT COLUMN (1 Col): OFFLINE DATA EXPORT HUB */}
-        <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm hover:shadow-md transition-shadow duration-200 space-y-5 flex flex-col justify-between">
-          <div className="space-y-4">
-            <div className="border-b border-slate-100 pb-4 space-y-1">
-              <div className="flex items-center gap-2">
-                <Download className="text-blue-600" size={18} />
-                <h3 className="text-md font-extrabold text-blue-900 tracking-tight">Offline Record Keep</h3>
+        {/* RIGHT COLUMN (1 Col): OFFLINE DATA EXPORT HUB & CONFIGURATIONS */}
+        <div className="space-y-6">
+          <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm hover:shadow-md transition-shadow duration-200 space-y-5 flex flex-col justify-between">
+            <div className="space-y-4">
+              <div className="border-b border-slate-100 pb-4 space-y-1">
+                <div className="flex items-center gap-2">
+                  <Download className="text-blue-600" size={18} />
+                  <h3 className="text-md font-extrabold text-blue-900 tracking-tight">Offline Record Keep</h3>
+                </div>
+                <p className="text-xs text-slate-500 font-medium">Export raw data as standard CSV spreadsheets</p>
               </div>
-              <p className="text-xs text-slate-500 font-medium">Export raw data as standard CSV spreadsheets</p>
+
+              {/* Explanatory Info Card */}
+              <div className="bg-amber-50/50 border border-amber-100 p-3.5 rounded-xl space-y-2 text-[11px] leading-relaxed text-amber-850">
+                <div className="flex items-center gap-1.5 font-bold text-amber-850">
+                  <Info size={14} className="text-amber-600 shrink-0" />
+                  <span>Offline Continuity Guide</span>
+                </div>
+                <p>
+                  As a GIMK regional administrator, utilize these CSV extracts to back up rosters, print paper statements, or run custom spreadsheets offline.
+                </p>
+              </div>
+
+              {/* Export Buttons Stack */}
+              <div className="space-y-2.5">
+                {/* Member Export */}
+                <button 
+                  onClick={canExport ? handleExportMembers : undefined}
+                  disabled={!canExport}
+                  className={`w-full flex items-center justify-between p-3.5 bg-white border border-slate-200 rounded-xl transition group text-left shadow-xs ${!canExport ? 'opacity-50 cursor-not-allowed bg-slate-50' : 'hover:bg-slate-50 hover:border-blue-300 cursor-pointer active:scale-99'}`}
+                >
+                  <div className="space-y-0.5">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-xs font-bold text-slate-800 block">Congregant Registry</span>
+                      {!canExport && <span className="bg-slate-100 border border-slate-200 text-slate-500 text-[8px] font-extrabold px-1 rounded uppercase tracking-wide">Locked</span>}
+                    </div>
+                    <span className="text-[10px] text-slate-400 block font-medium">Exports all {members.length} church members</span>
+                  </div>
+                  <div className={`p-2 rounded-lg transition ${!canExport ? 'bg-slate-100 text-slate-400' : 'bg-blue-50 text-blue-600 group-hover:bg-blue-600 group-hover:text-white'}`}>
+                    <Download size={14} />
+                  </div>
+                </button>
+
+                {/* Finance Export */}
+                <button 
+                  onClick={canExport ? handleExportContributions : undefined}
+                  disabled={!canExport}
+                  className={`w-full flex items-center justify-between p-3.5 bg-white border border-slate-200 rounded-xl transition group text-left shadow-xs ${!canExport ? 'opacity-50 cursor-not-allowed bg-slate-50' : 'hover:bg-slate-50 hover:border-blue-300 cursor-pointer active:scale-99'}`}
+                >
+                  <div className="space-y-0.5">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-xs font-bold text-slate-800 block">Stewardship Ledger</span>
+                      {!canExport && <span className="bg-slate-100 border border-slate-200 text-slate-500 text-[8px] font-extrabold px-1 rounded uppercase tracking-wide">Locked</span>}
+                    </div>
+                    <span className="text-[10px] text-slate-400 block font-medium">Exports all tithes, offerings & funds</span>
+                  </div>
+                  <div className={`p-2 rounded-lg transition ${!canExport ? 'bg-slate-100 text-slate-400' : 'bg-blue-50 text-blue-600 group-hover:bg-blue-600 group-hover:text-white'}`}>
+                    <Download size={14} />
+                  </div>
+                </button>
+
+                {/* Attendance Export */}
+                <button 
+                  onClick={canExport ? handleExportAttendance : undefined}
+                  disabled={!canExport}
+                  className={`w-full flex items-center justify-between p-3.5 bg-white border border-slate-200 rounded-xl transition group text-left shadow-xs ${!canExport ? 'opacity-50 cursor-not-allowed bg-slate-50' : 'hover:bg-slate-50 hover:border-blue-300 cursor-pointer active:scale-99'}`}
+                >
+                  <div className="space-y-0.5">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-xs font-bold text-slate-800 block">Attendance Records</span>
+                      {!canExport && <span className="bg-slate-100 border border-slate-200 text-slate-500 text-[8px] font-extrabold px-1 rounded uppercase tracking-wide">Locked</span>}
+                    </div>
+                    <span className="text-[10px] text-slate-400 block font-medium">Exports GIMK Sabbath service checklists</span>
+                  </div>
+                  <div className={`p-2 rounded-lg transition ${!canExport ? 'bg-slate-100 text-slate-400' : 'bg-blue-50 text-blue-600 group-hover:bg-blue-600 group-hover:text-white'}`}>
+                    <Download size={14} />
+                  </div>
+                </button>
+              </div>
             </div>
 
-            {/* Explanatory Info Card */}
-            <div className="bg-amber-50/50 border border-amber-100 p-3.5 rounded-xl space-y-2 text-[11px] leading-relaxed text-amber-850">
-              <div className="flex items-center gap-1.5 font-bold text-amber-850">
-                <Info size={14} className="text-amber-600 shrink-0" />
-                <span>Offline Continuity Guide</span>
-              </div>
-              <p>
-                As a GIMK regional administrator, utilize these CSV extracts to back up rosters, print paper statements, or run custom spreadsheets offline.
-              </p>
-            </div>
-
-            {/* Export Buttons Stack */}
-            <div className="space-y-2.5">
-              {/* Member Export */}
-              <button 
-                onClick={canExport ? handleExportMembers : undefined}
-                disabled={!canExport}
-                className={`w-full flex items-center justify-between p-3.5 bg-white border border-slate-200 rounded-xl transition group text-left shadow-xs ${!canExport ? 'opacity-50 cursor-not-allowed bg-slate-50' : 'hover:bg-slate-50 hover:border-blue-300 cursor-pointer active:scale-99'}`}
-              >
-                <div className="space-y-0.5">
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-xs font-bold text-slate-800 block">Congregant Registry</span>
-                    {!canExport && <span className="bg-slate-100 border border-slate-200 text-slate-500 text-[8px] font-extrabold px-1 rounded uppercase tracking-wide">Locked</span>}
-                  </div>
-                  <span className="text-[10px] text-slate-400 block font-medium">Exports all {members.length} church members</span>
-                </div>
-                <div className={`p-2 rounded-lg transition ${!canExport ? 'bg-slate-100 text-slate-400' : 'bg-blue-50 text-blue-600 group-hover:bg-blue-600 group-hover:text-white'}`}>
-                  <Download size={14} />
-                </div>
-              </button>
-
-              {/* Finance Export */}
-              <button 
-                onClick={canExport ? handleExportContributions : undefined}
-                disabled={!canExport}
-                className={`w-full flex items-center justify-between p-3.5 bg-white border border-slate-200 rounded-xl transition group text-left shadow-xs ${!canExport ? 'opacity-50 cursor-not-allowed bg-slate-50' : 'hover:bg-slate-50 hover:border-blue-300 cursor-pointer active:scale-99'}`}
-              >
-                <div className="space-y-0.5">
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-xs font-bold text-slate-800 block">Stewardship Ledger</span>
-                    {!canExport && <span className="bg-slate-100 border border-slate-200 text-slate-500 text-[8px] font-extrabold px-1 rounded uppercase tracking-wide">Locked</span>}
-                  </div>
-                  <span className="text-[10px] text-slate-400 block font-medium">Exports all tithes, offerings & funds</span>
-                </div>
-                <div className={`p-2 rounded-lg transition ${!canExport ? 'bg-slate-100 text-slate-400' : 'bg-blue-50 text-blue-600 group-hover:bg-blue-600 group-hover:text-white'}`}>
-                  <Download size={14} />
-                </div>
-              </button>
-
-              {/* Attendance Export */}
-              <button 
-                onClick={canExport ? handleExportAttendance : undefined}
-                disabled={!canExport}
-                className={`w-full flex items-center justify-between p-3.5 bg-white border border-slate-200 rounded-xl transition group text-left shadow-xs ${!canExport ? 'opacity-50 cursor-not-allowed bg-slate-50' : 'hover:bg-slate-50 hover:border-blue-300 cursor-pointer active:scale-99'}`}
-              >
-                <div className="space-y-0.5">
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-xs font-bold text-slate-800 block">Attendance Records</span>
-                    {!canExport && <span className="bg-slate-100 border border-slate-200 text-slate-500 text-[8px] font-extrabold px-1 rounded uppercase tracking-wide">Locked</span>}
-                  </div>
-                  <span className="text-[10px] text-slate-400 block font-medium">Exports GIMK Sabbath service checklists</span>
-                </div>
-                <div className={`p-2 rounded-lg transition ${!canExport ? 'bg-slate-100 text-slate-400' : 'bg-blue-50 text-blue-600 group-hover:bg-blue-600 group-hover:text-white'}`}>
-                  <Download size={14} />
-                </div>
-              </button>
+            <div className="pt-4 border-t border-slate-100 text-[10px] text-slate-400 flex items-center gap-1 mt-6">
+              <Sparkles size={11} className="text-blue-500 animate-spin" style={{ animationDuration: '6s' }} />
+              <span>Compliant with standard RFC-4180 CSV specifications</span>
             </div>
           </div>
 
-          <div className="pt-4 border-t border-slate-100 text-[10px] text-slate-400 flex items-center gap-1 mt-6">
-            <Sparkles size={11} className="text-blue-500 animate-spin" style={{ animationDuration: '6s' }} />
-            <span>Compliant with standard RFC-4180 CSV specifications</span>
+          {/* GLOBAL SONGBOOK CONFIGURATION CARD */}
+          <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm hover:shadow-md transition-shadow duration-200 space-y-4">
+            <div className="border-b border-slate-100 pb-4 space-y-1">
+              <div className="flex items-center gap-2">
+                <Music className="text-blue-600" size={18} />
+                <h3 className="text-md font-extrabold text-blue-900 tracking-tight">Congregant Songbook Link</h3>
+              </div>
+              <p className="text-xs text-slate-500 font-medium">Configure the GIMK digital hymnal PDF document</p>
+            </div>
+
+            <form onSubmit={handleSaveSongbookUrl} className="space-y-3">
+              <div className="space-y-1.5">
+                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                  Songbook Document PDF Link
+                </label>
+                <div className="relative">
+                  <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-slate-450">
+                    <Link size={13} className="text-slate-400" />
+                  </span>
+                  <input
+                    type="url"
+                    value={songbookUrl}
+                    onChange={(e) => setSongbookUrl(e.target.value)}
+                    placeholder="https://drive.google.com/file/... or direct PDF link"
+                    className="w-full pl-9 pr-3 py-2 border border-slate-200 hover:border-slate-300 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 rounded-lg text-xs placeholder:text-slate-400 font-medium transition"
+                  />
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                disabled={isSavingSongbook}
+                className="w-full flex items-center justify-center gap-1.5 px-3 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white font-semibold text-xs rounded-lg transition shadow-xs cursor-pointer select-none active:scale-95"
+              >
+                {isSavingSongbook ? 'Saving Settings...' : 'Save Songbook Link'}
+              </button>
+            </form>
+
+            {songbookSuccessMessage && (
+              <div className="bg-emerald-50 border border-emerald-100 text-[11px] text-emerald-800 p-2.5 rounded-lg flex items-center gap-1.5">
+                <CheckCircle size={13} className="text-emerald-600 shrink-0" />
+                <span>{songbookSuccessMessage}</span>
+              </div>
+            )}
+
+            <div className="bg-slate-50 border border-slate-150 p-3 rounded-lg text-[10px] leading-relaxed text-slate-500 space-y-1">
+              <span className="font-bold text-slate-700 block">Google Drive & Dropbox Integration:</span>
+              <p>
+                Paste any standard share link. GIMK converts Google Drive files automatically to their optimized embed format for inline loading.
+              </p>
+            </div>
           </div>
         </div>
       </div>

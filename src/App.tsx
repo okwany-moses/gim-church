@@ -90,9 +90,8 @@ export default function App() {
 
   // PWA Install Prompt State
   const [deferredPrompt, setDeferredPrompt] = useState<any>((window as any).deferredPrompt || null);
-  const [isInstallable, setIsInstallable] = useState(!!(window as any).deferredPrompt);
+  const [isInstallable, setIsInstallable] = useState(!!(window as any).deferredPrompt || true); // Default to true so user can always attempt/click install
   const [isStandalone, setIsStandalone] = useState(false);
-  const [showInstallModal, setShowInstallModal] = useState(false);
   const [isInIframe, setIsInIframe] = useState(false);
 
   useEffect(() => {
@@ -145,19 +144,48 @@ export default function App() {
     };
   }, []);
 
-  const handleInstallApp = async () => {
-    if (!deferredPrompt) {
-      // If no prompt event, explain manual install
+  const handleInstallClick = async () => {
+    if (isInIframe) {
+      // Iframe sandbox blocks direct install. Instantly open in a new tab where PWA prompt works
+      window.open(window.location.href, '_blank');
       return;
     }
-    // Show prompt
-    deferredPrompt.prompt();
-    // Wait for resolution
-    const { outcome } = await deferredPrompt.userChoice;
-    console.log('User PWA install choice:', outcome);
-    setDeferredPrompt(null);
-    setIsInstallable(false);
-    setShowInstallModal(false);
+
+    const activePrompt = deferredPrompt || (window as any).deferredPrompt;
+    if (activePrompt) {
+      try {
+        await activePrompt.prompt();
+        const { outcome } = await activePrompt.userChoice;
+        console.log('User PWA install choice:', outcome);
+        setDeferredPrompt(null);
+        (window as any).deferredPrompt = null;
+        setIsInstallable(false);
+      } catch (err) {
+        console.error('PWA install prompt failed:', err);
+      }
+      return;
+    }
+
+    // Smart fallback detection for different platforms and browsers
+    const userAgent = navigator.userAgent || '';
+    const isIOS = /iPad|iPhone|iPod/.test(userAgent) && !(window as any).MSStream;
+    const isSafari = /^((?!chrome|android).)*safari/i.test(userAgent);
+    const isAndroid = /Android/i.test(userAgent);
+
+    if (isIOS) {
+      showToast("To install GIMK on iOS: Tap 'Share' (square with arrow up) in Safari, then select 'Add to Home Screen'!");
+    } else if (isSafari) {
+      showToast("To install GIMK on Safari: Click 'File' > 'Add to Dock...' or 'Share' > 'Add to Home Screen'!");
+    } else if (isAndroid) {
+      showToast("To install GIMK: Tap your browser's menu (three dots) in the top right, and select 'Install app' or 'Add to Home screen'!");
+    } else {
+      showToast("To install GIMK: Click the 'Install App' icon in the address bar (next to the bookmark star), or select 'Install' from your browser menu!");
+    }
+
+    // Refresh stashed prompt reference in case of late load
+    if ((window as any).deferredPrompt) {
+      setDeferredPrompt((window as any).deferredPrompt);
+    }
   };
 
   // Toast Notification State
@@ -582,13 +610,7 @@ export default function App() {
                 <div className="flex items-center gap-2">
                   <h1 className="text-sm font-extrabold text-white uppercase tracking-tight leading-none">GIMK Portal</h1>
                   <button
-                    onClick={() => {
-                      if (isInstallable && deferredPrompt) {
-                        handleInstallApp();
-                      } else {
-                        setShowInstallModal(true);
-                      }
-                    }}
+                    onClick={handleInstallClick}
                     className="inline-flex items-center gap-1 bg-gradient-to-r from-amber-400 to-yellow-300 hover:from-amber-300 hover:to-yellow-200 text-slate-950 px-2 py-0.5 rounded-full text-[9px] font-extrabold tracking-wider uppercase transition cursor-pointer active:scale-95 select-none shadow-md"
                   >
                     <Download size={9} />
@@ -986,13 +1008,7 @@ export default function App() {
           animate={{ opacity: 1, scale: 1, y: 0 }}
           whileHover={{ scale: 1.05 }}
           whileTap={{ scale: 0.95 }}
-          onClick={() => {
-            if (isInstallable && deferredPrompt) {
-              handleInstallApp();
-            } else {
-              setShowInstallModal(true);
-            }
-          }}
+          onClick={handleInstallClick}
           className="fixed bottom-6 right-6 md:bottom-8 md:right-8 bg-blue-600 hover:bg-blue-700 text-white font-bold p-3.5 md:py-3.5 md:px-5 rounded-full md:rounded-2xl shadow-2xl flex items-center gap-2.5 z-[150] cursor-pointer group active:scale-[0.98] border border-blue-500/30 transition-shadow hover:shadow-blue-500/20"
           title="Install GIMK Portal App"
         >
@@ -1037,133 +1053,6 @@ export default function App() {
             showToast('Success: Password updated.');
           }}
         />
-      )}
-
-      {/* PWA Install Modal */}
-      {showInstallModal && (
-        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs z-[200] flex items-center justify-center p-4">
-          <motion.div
-            initial={{ scale: 0.95, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            className="bg-white rounded-2xl max-w-md w-full border border-slate-100 shadow-2xl overflow-hidden"
-          >
-            {/* Header */}
-            <div className="bg-gradient-to-r from-slate-900 via-blue-950 to-slate-900 px-6 py-4 flex items-center justify-between text-white border-b border-blue-900/10">
-              <div className="flex items-center gap-2">
-                <Download size={16} className="text-amber-400" />
-                <span className="font-extrabold text-sm uppercase tracking-wider">Install GIMK Portal</span>
-              </div>
-              <button
-                onClick={() => setShowInstallModal(false)}
-                className="text-slate-400 hover:text-white transition cursor-pointer"
-              >
-                <X size={18} />
-              </button>
-            </div>
-
-            {/* Content */}
-            <div className="p-6 space-y-4">
-              <div className="text-center space-y-1">
-                <div className="mx-auto w-16 h-16 bg-white rounded-full overflow-hidden shadow-md border border-slate-100 flex items-center justify-center">
-                  <img src={gimkLogo} alt="GIMK Logo" className="w-full h-full object-cover animate-pulse" />
-                </div>
-                <h3 className="text-base font-extrabold text-slate-800 pt-2">GIMK Church Management</h3>
-                <p className="text-xs text-slate-500 leading-relaxed">
-                  Install the portal as an application on your computer, tablet, or phone for incredibly fast, one-tap access!
-                </p>
-              </div>
-
-              {/* Perks */}
-              <div className="bg-slate-50 rounded-xl p-4 border border-slate-100 space-y-2.5">
-                <span className="text-[10px] uppercase font-extrabold tracking-wider text-slate-400 block">Why Install?</span>
-                <div className="grid grid-cols-3 gap-2 text-center">
-                  <div className="p-2 space-y-1 bg-white rounded-lg border border-slate-100">
-                    <span className="text-xs font-bold text-blue-700 block">Fast</span>
-                    <span className="text-[9px] text-slate-400 block leading-tight">Launches in milliseconds</span>
-                  </div>
-                  <div className="p-2 space-y-1 bg-white rounded-lg border border-slate-100">
-                    <span className="text-xs font-bold text-blue-700 block">Offline</span>
-                    <span className="text-[9px] text-slate-400 block leading-tight">View data without internet</span>
-                  </div>
-                  <div className="p-2 space-y-1 bg-white rounded-lg border border-slate-100">
-                    <span className="text-xs font-bold text-blue-700 block">Icon</span>
-                    <span className="text-[9px] text-slate-400 block leading-tight">App icon on home screen</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Install action / instructions */}
-              <div className="space-y-3 pt-2">
-                {isInIframe ? (
-                  <div className="space-y-3">
-                    <div className="bg-rose-50 border border-rose-100 text-rose-800 p-3.5 rounded-xl flex items-start gap-2.5 text-xs leading-relaxed">
-                      <AlertCircle className="text-rose-600 shrink-0 mt-0.5" size={16} />
-                      <div>
-                        <strong className="font-extrabold block mb-0.5">Browser Sandbox Limitation</strong>
-                        <span>Because you are currently viewing GIMK inside an iframe (AI Studio preview frame), your browser security strictly blocks direct PWA installations. You must launch the portal in a new standalone tab first!</span>
-                      </div>
-                    </div>
-                    <button
-                      onClick={() => window.open(window.location.href, '_blank')}
-                      className="w-full bg-blue-600 hover:bg-blue-700 text-white py-2.5 rounded-xl text-xs font-extrabold uppercase tracking-wider transition cursor-pointer select-none shadow-md flex items-center justify-center gap-2 active:scale-[0.98]"
-                    >
-                      <ExternalLink size={14} />
-                      <span>Open in New Tab to Install</span>
-                    </button>
-                  </div>
-                ) : isInstallable && deferredPrompt ? (
-                  <button
-                    onClick={handleInstallApp}
-                    className="w-full bg-blue-600 hover:bg-blue-700 text-white py-2.5 rounded-xl text-xs font-extrabold uppercase tracking-wider transition cursor-pointer select-none shadow-md flex items-center justify-center gap-2 active:scale-[0.98]"
-                  >
-                    <Download size={14} />
-                    <span>Install App Now</span>
-                  </button>
-                ) : (
-                  <div className="space-y-3 text-xs text-slate-600 leading-relaxed bg-amber-50/40 p-4 rounded-xl border border-amber-100/50">
-                    <div className="flex items-start gap-2.5">
-                      <Smartphone size={16} className="text-amber-600 mt-0.5 shrink-0" />
-                      <div>
-                        <strong className="text-slate-800 block mb-0.5">Mobile Browsers (Chrome / Android / Firefox):</strong>
-                        <span>Tap the <strong className="text-slate-800">three dots (menu)</strong> in the top-right corner of your browser, and select <strong className="text-slate-800">Install app</strong> or <strong className="text-slate-800">Add to Home screen</strong>.</span>
-                      </div>
-                    </div>
-                    <div className="w-full h-px bg-slate-200/40" />
-                    <div className="flex items-start gap-2.5">
-                      <Smartphone size={16} className="text-amber-600 mt-0.5 shrink-0" />
-                      <div>
-                        <strong className="text-slate-800 block mb-0.5">iOS / Safari Users:</strong>
-                        <span>Tap the <strong className="text-slate-800">Share</strong> button at the bottom/top of Safari, and select <strong className="text-slate-800">Add to Home Screen</strong>.</span>
-                      </div>
-                    </div>
-                    <div className="w-full h-px bg-slate-200/40" />
-                    <div className="flex items-start gap-2.5">
-                      <Laptop size={16} className="text-amber-600 mt-0.5 shrink-0" />
-                      <div>
-                        <strong className="text-slate-800 block mb-0.5">Desktop Users:</strong>
-                        <span>Click the <strong className="text-slate-800">Install app</strong> icon in your browser's address bar (next to the star/bookmark button), or open your browser's main menu and click <strong className="text-slate-800">Save and share &gt; Install page</strong>.</span>
-                      </div>
-                    </div>
-                    <div className="w-full h-px bg-slate-200/40" />
-                    <div className="text-[10px] text-slate-400 italic font-medium leading-normal text-center pt-0.5">
-                      Tip: If direct installation is not showing, please wait a couple of seconds for the background service worker to register completely, or use the browser menu options mentioned above!
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Footer */}
-            <div className="bg-slate-50 px-6 py-3 border-t border-slate-100 flex justify-end">
-              <button
-                onClick={() => setShowInstallModal(false)}
-                className="px-4 py-1.5 border border-slate-200 hover:bg-slate-100 text-slate-500 rounded-lg text-xs font-semibold cursor-pointer transition"
-              >
-                Close
-              </button>
-            </div>
-          </motion.div>
-        </div>
       )}
     </div>
   );

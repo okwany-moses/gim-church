@@ -687,6 +687,33 @@ app.delete('/api/hymns/:id', async (req, res) => {
   }
 });
 
+// 9.5 Global Settings Endpoints
+app.get('/api/settings/:key', async (req, res) => {
+  try {
+    const db = await getDb();
+    const row = await db.get('SELECT value FROM settings WHERE key = ?', [req.params.key]);
+    res.json({ value: row ? row.value : null });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/settings', async (req, res) => {
+  try {
+    const db = await getDb();
+    const { key, value } = req.body;
+    const existing = await db.get('SELECT key FROM settings WHERE key = ?', [key]);
+    if (existing) {
+      await db.run('UPDATE settings SET value = ? WHERE key = ?', [value, key]);
+    } else {
+      await db.run('INSERT INTO settings (key, value) VALUES (?, ?)', [key, value]);
+    }
+    res.json({ success: true });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // 10. Attendance Sessions & Records Endpoints
 app.get('/api/attendance/sessions', async (req, res) => {
   try {

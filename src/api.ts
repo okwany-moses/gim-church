@@ -327,4 +327,11 @@ export const api = {
     request<{ success: boolean; message: string }>('/database/reset', {
       method: 'POST'
     }),
+
+  // Settings
+  getSetting: (key: string) => request<{ value: string | null }>(`/settings/${encodeURIComponent(key)}`),
+  setSetting: (key: string, value: string) => request<{ success: boolean }>('/settings', {
+    method: 'POST',
+    body: JSON.stringify({ key, value })
+  }),
 };

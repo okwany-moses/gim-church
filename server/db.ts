@@ -506,6 +506,11 @@ async function initDb(db: CompatDatabase) {
       password TEXT NOT NULL,
       role TEXT NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS settings (
+      key TEXT PRIMARY KEY,
+      value TEXT
+    );
   `);
 
   // Wrap seeding in individual try-catch blocks to prevent any seeding conflict from aborting overall database initialization
