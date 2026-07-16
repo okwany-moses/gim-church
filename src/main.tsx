@@ -61,7 +61,7 @@ createRoot(document.getElementById('root')!).render(
 
 // Register Service Worker for PWA installability
 if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
+  const registerSW = () => {
     navigator.serviceWorker.register('/sw.js')
       .then((registration) => {
         console.log('PWA ServiceWorker registered successfully with scope: ', registration.scope);
@@ -69,7 +69,13 @@ if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
       .catch((error) => {
         console.log('PWA ServiceWorker registration failed: ', error);
       });
-  });
+  };
+
+  if (document.readyState === 'complete' || document.readyState === 'interactive') {
+    registerSW();
+  } else {
+    window.addEventListener('load', registerSW);
+  }
 }
 
 

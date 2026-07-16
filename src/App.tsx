@@ -127,6 +127,29 @@ export default function App() {
       setIsInstallable(false);
     }
 
+    // Aggressive periodic & reactive stashed event check
+    const syncStashedPrompt = () => {
+      const globalPrompt = (window as any).deferredPrompt;
+      if (globalPrompt && !deferredPrompt) {
+        setDeferredPrompt(globalPrompt);
+        setIsInstallable(true);
+      }
+    };
+
+    // Sync on window focus (user returning to tab)
+    window.addEventListener('focus', syncStashedPrompt);
+
+    // Sync on any document click/tap anywhere on the screen (user gesture)
+    const handleGestureSync = () => {
+      syncStashedPrompt();
+    };
+    document.addEventListener('click', handleGestureSync, { passive: true });
+    document.addEventListener('touchstart', handleGestureSync, { passive: true });
+
+    // Polling backup every 1 second for first 15 seconds to catch lazy service worker registrations
+    const intervalId = setInterval(syncStashedPrompt, 1000);
+    const timeoutId = setTimeout(() => clearInterval(intervalId), 15000);
+
     const handleAppInstalled = () => {
       setIsInstallable(false);
       setIsStandalone(true);
@@ -140,9 +163,14 @@ export default function App() {
     return () => {
       window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
       window.removeEventListener('appinstalled', handleAppInstalled);
+      window.removeEventListener('focus', syncStashedPrompt);
+      document.removeEventListener('click', handleGestureSync);
+      document.removeEventListener('touchstart', handleGestureSync);
+      clearInterval(intervalId);
+      clearTimeout(timeoutId);
       delete (window as any).onBeforeInstallPromptTriggered;
     };
-  }, []);
+  }, [deferredPrompt]);
 
   const handleInstallClick = async () => {
     if (isInIframe) {
