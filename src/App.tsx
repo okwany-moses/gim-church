@@ -1371,17 +1371,15 @@ export default function App() {
                 >
                   Dismiss
                 </button>
-                {isInIframe && (
-                  <button
-                    onClick={() => {
-                      window.open(window.location.href, '_blank');
-                      setShowInstallModal(false);
-                    }}
-                    className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold uppercase tracking-wider px-4 py-2.5 rounded-xl cursor-pointer transition active:scale-95 shadow-md shadow-blue-500/10"
-                  >
-                    Open in New Tab
-                  </button>
-                )}
+                <button
+                  onClick={() => {
+                    window.open(window.location.href, '_blank');
+                    setShowInstallModal(false);
+                  }}
+                  className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold uppercase tracking-wider px-4 py-2.5 rounded-xl cursor-pointer transition active:scale-95 shadow-md shadow-blue-500/10"
+                >
+                  Open in New Tab
+                </button>
               </div>
             </motion.div>
           </div>
