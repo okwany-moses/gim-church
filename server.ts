@@ -20,54 +20,6 @@ app.use((req, res, next) => {
 
 app.use(express.json({ limit: '10mb' }));
 
-// Dynamic Manifest endpoint to solve PWA install badge criteria on production domains like Render.com
-app.get('/manifest.json', (req, res) => {
-  const referer = req.headers.referer || '';
-  const host = req.get('host') || '';
-  const isAISPreview = referer.includes('/ais-') || host.includes('europe-west2.run.app');
-  const basePath = isAISPreview ? './' : '/';
-
-  res.setHeader('Content-Type', 'application/manifest+json');
-  res.json({
-    "name": "GIMK Church Management System",
-    "short_name": "GIMK Portal",
-    "description": "Comprehensive church management portal for Gideons International Ministries Kenya (GIMK) with admin dashboards, financial ledgers, cell fellowships directory, and interactive congregant services.",
-    "start_url": basePath,
-    "display": "standalone",
-    "orientation": "any",
-    "background_color": "#0f172a",
-    "theme_color": "#0f172a",
-    "scope": basePath,
-    "categories": ["utilities", "productivity"],
-    "icons": [
-      {
-        "src": `${basePath}logo-192.png`,
-        "sizes": "192x192",
-        "type": "image/png",
-        "purpose": "any"
-      },
-      {
-        "src": `${basePath}logo-512.png`,
-        "sizes": "512x512",
-        "type": "image/png",
-        "purpose": "any"
-      },
-      {
-        "src": `${basePath}logo-192.png`,
-        "sizes": "192x192",
-        "type": "image/png",
-        "purpose": "maskable"
-      },
-      {
-        "src": `${basePath}logo-512.png`,
-        "sizes": "512x512",
-        "type": "image/png",
-        "purpose": "maskable"
-      }
-    ]
-  });
-});
-
 // API ROUTES
 // 1. Stats Endpoint
 app.get('/api/stats', async (req, res) => {

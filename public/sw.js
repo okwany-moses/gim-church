@@ -1,11 +1,11 @@
-const CACHE_NAME = 'gimk-portal-v3';
+const CACHE_NAME = 'gimk-portal-v4';
 const ASSETS_TO_CACHE = [
-  './',
-  './index.html',
-  './logo.jpg',
-  './logo-192.png',
-  './logo-512.png',
-  './manifest.json'
+  '/',
+  '/index.html',
+  '/logo.jpg',
+  '/logo-192.png',
+  '/logo-512.png',
+  '/manifest.json'
 ];
 
 // Install Event
@@ -74,7 +74,7 @@ self.addEventListener('fetch', (event) => {
       }).catch(() => {
         // If completely offline and asset is index.html, return the cached root
         if (event.request.mode === 'navigate') {
-          return caches.match('./').then((response) => response || caches.match('./index.html'));
+          return caches.match('/').then((response) => response || caches.match('/index.html'));
         }
       });
     })
