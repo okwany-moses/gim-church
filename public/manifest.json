@@ -4,6 +4,10 @@
   "description": "Comprehensive church management portal for Gideons International Ministries Kenya (GIMK) with admin dashboards, financial ledgers, cell fellowships directory, and interactive congregant services.",
   "start_url": "./",
   "display": "standalone",
+  "display_override": [
+    "window-controls-overlay",
+    "standalone"
+  ],
   "orientation": "any",
   "background_color": "#0f172a",
   "theme_color": "#0f172a",

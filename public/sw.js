@@ -1,4 +1,4 @@
-const CACHE_NAME = 'gimk-portal-v10';
+const CACHE_NAME = 'gimk-portal-v11';
 const ASSETS_TO_CACHE = [
   './',
   './index.html',
@@ -63,20 +63,31 @@ self.addEventListener('fetch', (event) => {
   event.respondWith(
     caches.match(event.request).then((cachedResponse) => {
       if (cachedResponse) {
-        // Fetch a fresh copy in the background to update the cache
-        fetch(event.request)
-          .then((networkResponse) => {
-            if (networkResponse.status === 200) {
-              const contentType = networkResponse.headers.get('content-type') || '';
-              const isHTML = contentType.includes('text/html');
-              // Only put in cache if it's not HTML, or if it is a deliberate navigation request
-              if (!isHTML || event.request.mode === 'navigate') {
-                caches.open(CACHE_NAME).then((cache) => cache.put(event.request, networkResponse));
+        // Self-healing check: If the cached response is HTML but the requested asset is a non-navigation asset (like an image/json), it is a poisoned cache entry.
+        const cachedContentType = cachedResponse.headers.get('content-type') || '';
+        const isCachedHTML = cachedContentType.includes('text/html');
+        const isRequestNavigation = event.request.mode === 'navigate';
+
+        if (isCachedHTML && !isRequestNavigation) {
+          console.warn(`[Service Worker] Poisoned cache entry detected for "${event.request.url}". Evicting from cache and bypassing.`);
+          caches.open(CACHE_NAME).then((cache) => cache.delete(event.request));
+          // Let it fall through to fetch from network instead of returning the poisoned HTML response
+        } else {
+          // Fetch a fresh copy in the background to update the cache
+          fetch(event.request)
+            .then((networkResponse) => {
+              if (networkResponse.status === 200) {
+                const contentType = networkResponse.headers.get('content-type') || '';
+                const isHTML = contentType.includes('text/html');
+                // Only put in cache if it's not HTML, or if it is a deliberate navigation request
+                if (!isHTML || event.request.mode === 'navigate') {
+                  caches.open(CACHE_NAME).then((cache) => cache.put(event.request, networkResponse));
+                }
               }
-            }
-          })
-          .catch(() => { /* Ignore background update failures */ });
-        return cachedResponse;
+            })
+            .catch(() => { /* Ignore background update failures */ });
+          return cachedResponse;
+        }
       }
 
       return fetch(event.request).then((networkResponse) => {
