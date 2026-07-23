@@ -59,16 +59,70 @@ import GimkAuth, { ChangePasswordModal } from './components/GimkAuth.js';
 import DatabaseMaintenance from './components/DatabaseMaintenance.js';
 
 export default function App() {
-  const [currentRole, setCurrentRole] = useState<'congregant' | 'usher' | 'pastor' | 'admin'>('congregant');
-  const [activeTab, setActiveTab] = useState<string>('home');
+  const [currentRole, setCurrentRole] = useState<'congregant' | 'usher' | 'pastor' | 'admin'>(() => {
+    try {
+      const savedRole = localStorage.getItem('gimk_current_role');
+      if (savedRole && ['congregant', 'usher', 'pastor', 'admin'].includes(savedRole)) {
+        return savedRole as any;
+      }
+    } catch (e) {
+      console.error('Error reading gimk_current_role from localStorage:', e);
+    }
+    return 'congregant';
+  });
+
+  const [activeTab, setActiveTab] = useState<string>(() => {
+    try {
+      const savedTab = localStorage.getItem('gimk_active_tab');
+      if (savedTab) return savedTab;
+    } catch (e) {
+      console.error('Error reading gimk_active_tab from localStorage:', e);
+    }
+    return 'home';
+  });
+
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState<boolean>(false);
 
   // Active user sessions per administrative role
-  const [loggedInUsers, setLoggedInUsers] = useState<Record<'admin' | 'pastor' | 'usher', string | null>>({
-    admin: null,
-    pastor: null,
-    usher: null
+  const [loggedInUsers, setLoggedInUsers] = useState<Record<'admin' | 'pastor' | 'usher', string | null>>(() => {
+    try {
+      const saved = localStorage.getItem('gimk_logged_in_users');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        return {
+          admin: parsed?.admin || null,
+          pastor: parsed?.pastor || null,
+          usher: parsed?.usher || null
+        };
+      }
+    } catch (e) {
+      console.error('Error reading gimk_logged_in_users from localStorage:', e);
+    }
+    return {
+      admin: null,
+      pastor: null,
+      usher: null
+    };
   });
+
+  // Sync session and navigation state to localStorage
+  useEffect(() => {
+    try {
+      localStorage.setItem('gimk_current_role', currentRole);
+    } catch (e) {}
+  }, [currentRole]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('gimk_active_tab', activeTab);
+    } catch (e) {}
+  }, [activeTab]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('gimk_logged_in_users', JSON.stringify(loggedInUsers));
+    } catch (e) {}
+  }, [loggedInUsers]);
   const [showChangePassword, setShowChangePassword] = useState<boolean>(false);
 
   // Data Loading States
@@ -967,7 +1021,7 @@ export default function App() {
               ) : currentRole === 'admin' ? (
                 /* ADMIN VIEWPORT */
                 <>
-                  {activeTab === 'dashboard' && stats && (
+                  {(activeTab === 'dashboard' || !['dashboard', 'members', 'finances', 'branches', 'attendance', 'database'].includes(activeTab)) && stats && (
                     <AdminDashboard 
                       stats={stats} 
                       onNavigateToTab={(tab) => setActiveTab(tab)} 
