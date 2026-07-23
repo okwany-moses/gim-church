@@ -218,7 +218,7 @@ export default function PastorDashboard({
             <p className="text-xs text-blue-200/90 font-medium">Equipping pastors to lead Parishes, care for souls, and guide cell fellowships.</p>
           </div>
 
-          <div className="flex gap-2.5">
+          <div className="flex flex-wrap gap-2 sm:gap-2.5">
             <button
               onClick={() => setActiveTab('roster')}
               className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition cursor-pointer select-none ${activeTab === 'roster' ? 'bg-amber-400 text-slate-950 shadow-md font-extrabold' : 'bg-white/10 hover:bg-white/20 text-white'}`}

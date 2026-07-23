@@ -649,12 +649,13 @@ export default function App() {
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col font-sans text-slate-800 antialiased selection:bg-blue-100 selection:text-blue-900">
       {/* Sticky Header Banner */}
-      <header className="sticky top-0 bg-gradient-to-r from-slate-900 via-blue-950 to-slate-900 border-b border-blue-900/30 z-30 shadow-md px-4 py-3 md:px-6">
-        <div className="max-w-7xl mx-auto flex flex-col gap-2.5 sm:gap-3">
-          <div className="flex items-center justify-between gap-4">
+      <header className="sticky top-0 bg-gradient-to-r from-slate-900 via-blue-950 to-slate-900 border-b border-blue-900/30 z-30 shadow-md px-3 sm:px-4 md:px-6 py-2.5 sm:py-3">
+        <div className="max-w-7xl mx-auto flex flex-col gap-2 sm:gap-2.5">
+          {/* Main Header Bar Row */}
+          <div className="flex items-center justify-between gap-2 sm:gap-4 w-full min-w-0">
             {/* Logo & Name */}
-            <div className="flex items-center gap-3">
-              <div className="w-14 h-14 bg-white rounded-full overflow-hidden shadow-md border border-slate-200 flex items-center justify-center shrink-0">
+            <div className="flex items-center gap-2 sm:gap-3 min-w-0 shrink-0">
+              <div className="w-10 h-10 sm:w-12 sm:h-12 bg-white rounded-full overflow-hidden shadow-md border border-slate-200 flex items-center justify-center shrink-0">
                 <img
                   src={gimkLogo}
                   alt="GIMK Logo"
@@ -662,24 +663,24 @@ export default function App() {
                   referrerPolicy="no-referrer"
                 />
               </div>
-              <div>
-                <div className="flex items-center gap-2">
-                  <h1 className="text-sm font-extrabold text-white uppercase tracking-tight leading-none">GIMK Portal</h1>
+              <div className="min-w-0">
+                <div className="flex items-center gap-1.5 sm:gap-2">
+                  <h1 className="text-xs sm:text-sm font-extrabold text-white uppercase tracking-tight leading-none truncate">GIMK Portal</h1>
                   <button
                     onClick={handleInstallClick}
-                    className="inline-flex items-center gap-1 bg-gradient-to-r from-amber-400 to-yellow-300 hover:from-amber-300 hover:to-yellow-200 text-slate-950 px-2 py-0.5 rounded-full text-[9px] font-extrabold tracking-wider uppercase transition cursor-pointer active:scale-95 select-none shadow-md"
+                    className="inline-flex items-center gap-1 bg-gradient-to-r from-amber-400 to-yellow-300 hover:from-amber-300 hover:to-yellow-200 text-slate-950 px-2 py-0.5 rounded-full text-[8px] sm:text-[9px] font-extrabold tracking-wider uppercase transition cursor-pointer active:scale-95 select-none shadow-md shrink-0"
                   >
                     <Download size={9} />
                     <span>Install</span>
                   </button>
                 </div>
-                <p className="text-[10px] text-slate-300 font-semibold tracking-wider mt-0.5">Ramba-Kabondo, Kenya</p>
+                <p className="text-[9px] sm:text-[10px] text-slate-300 font-semibold tracking-wider mt-0.5 truncate">Ramba-Kabondo, Kenya</p>
               </div>
             </div>
 
-            {/* Desktop-only Search Bar (Admin View) */}
+            {/* Desktop Search Bar (Admin View - Large screens) */}
             {currentRole === 'admin' && (
-              <div className="hidden md:block flex-1 max-w-xs lg:max-w-md mx-4">
+              <div className="hidden xl:block flex-1 max-w-xs lg:max-w-sm mx-4">
                 <GlobalSearch 
                   members={members}
                   prayerRequests={prayerRequests}
@@ -689,28 +690,28 @@ export default function App() {
               </div>
             )}
 
-            {/* Admin Database Backup Info (Desktop) */}
-            {currentRole === 'admin' && (
-              <div className="hidden lg:flex items-center gap-2.5 text-xs bg-slate-950/45 px-3 py-1.5 rounded-lg border border-blue-900/30 shadow-inner">
-                <Database size={13} className="text-amber-400 animate-pulse shrink-0" />
-                <div className="text-[9px] text-slate-300 leading-tight">
-                  <span className="font-bold block text-slate-400 uppercase tracking-widest text-[7px] leading-none">Database Backup</span>
-                  <span className="font-mono font-medium">{latestBackupTime || 'Loading...'}</span>
+            {/* Right Controls Container */}
+            <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+              {/* Admin Database Backup Info (Desktop) */}
+              {currentRole === 'admin' && (
+                <div className="hidden xl:flex items-center gap-2 text-xs bg-slate-950/45 px-2.5 py-1.5 rounded-lg border border-blue-900/30 shadow-inner">
+                  <Database size={13} className="text-amber-400 animate-pulse shrink-0" />
+                  <div className="text-[9px] text-slate-300 leading-tight">
+                    <span className="font-bold block text-slate-400 uppercase tracking-widest text-[7px] leading-none">Database Backup</span>
+                    <span className="font-mono font-medium">{latestBackupTime || 'Loading...'}</span>
+                  </div>
+                  <button
+                    onClick={handleTriggerBackup}
+                    disabled={isBackingUp}
+                    className={`ml-1 px-2 py-0.5 rounded bg-blue-600 hover:bg-blue-500 text-white text-[8px] font-extrabold tracking-wider uppercase transition cursor-pointer disabled:opacity-50 select-none active:scale-95 ${isBackingUp ? 'animate-pulse' : ''}`}
+                  >
+                    {isBackingUp ? '...' : 'Backup'}
+                  </button>
                 </div>
-                <button
-                  onClick={handleTriggerBackup}
-                  disabled={isBackingUp}
-                  className={`ml-1 px-2.5 py-1 rounded bg-blue-600 hover:bg-blue-500 text-white text-[9px] font-extrabold tracking-wider uppercase transition cursor-pointer disabled:opacity-50 select-none active:scale-95 ${isBackingUp ? 'animate-pulse' : ''}`}
-                >
-                  {isBackingUp ? 'Backing up...' : 'Backup Now'}
-                </button>
-              </div>
-            )}
+              )}
 
-            {/* Controls: Portal Switch & Hamburger */}
-            <div className="flex items-center gap-3">
-              {/* Secure Role Toggle Switch */}
-              <div className="inline-flex flex-wrap rounded-xl border border-blue-900/40 p-0.5 bg-slate-950/75 text-xs shadow-inner gap-1">
+              {/* Desktop-only Role Toggle Switch (lg+ screens) */}
+              <div className="hidden lg:inline-flex rounded-xl border border-blue-900/40 p-0.5 bg-slate-950/75 text-xs shadow-inner gap-1">
                 <button
                   onClick={() => { setCurrentRole('congregant'); setActiveTab('home'); }}
                   className={`px-3 py-1.5 rounded-lg font-bold flex items-center gap-1 transition cursor-pointer text-[10px] uppercase tracking-wider ${currentRole === 'congregant' ? 'bg-amber-400 text-slate-950 shadow-xs' : 'text-slate-300 hover:text-white hover:bg-white/5'}`}
@@ -743,19 +744,21 @@ export default function App() {
 
               {/* Dynamic User Session Info Bar */}
               {currentRole !== 'congregant' && loggedInUsers[currentRole] && (
-                <div className="flex items-center gap-2 bg-slate-950/65 border border-slate-800/80 px-2.5 py-1.5 rounded-xl text-[10px] text-slate-300 font-semibold shadow-inner">
-                  <span>User: <strong className="text-amber-400 font-bold">{loggedInUsers[currentRole]}</strong></span>
-                  <div className="w-px h-3 bg-slate-800" />
+                <div className="flex items-center gap-1.5 sm:gap-2 bg-slate-950/65 border border-slate-800/80 px-2 sm:px-2.5 py-1 sm:py-1.5 rounded-xl text-[9px] sm:text-[10px] text-slate-300 font-semibold shadow-inner">
+                  <span className="truncate max-w-[80px] sm:max-w-[120px]">
+                    User: <strong className="text-amber-400 font-bold">{loggedInUsers[currentRole]}</strong>
+                  </span>
+                  <div className="w-px h-3 bg-slate-800 shrink-0" />
                   <button
                     onClick={() => setShowChangePassword(true)}
-                    className="text-[9px] uppercase tracking-wider hover:text-white text-slate-400 font-bold cursor-pointer transition select-none"
+                    className="text-[8px] sm:text-[9px] uppercase tracking-wider hover:text-white text-slate-400 font-bold cursor-pointer transition select-none shrink-0"
                   >
                     Keys
                   </button>
-                  <div className="w-px h-3 bg-slate-800" />
+                  <div className="w-px h-3 bg-slate-800 shrink-0" />
                   <button
                     onClick={() => setLoggedInUsers(prev => ({ ...prev, [currentRole]: null }))}
-                    className="text-[9px] uppercase tracking-wider hover:text-rose-400 text-slate-400 font-bold cursor-pointer transition select-none"
+                    className="text-[8px] sm:text-[9px] uppercase tracking-wider hover:text-rose-400 text-slate-400 font-bold cursor-pointer transition select-none shrink-0"
                   >
                     Exit
                   </button>
@@ -766,17 +769,52 @@ export default function App() {
               {currentRole === 'admin' && (
                 <button
                   onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-                  className="p-2 md:hidden hover:bg-slate-800 rounded-lg text-slate-300 cursor-pointer"
+                  className="p-1.5 sm:p-2 md:hidden hover:bg-slate-800 rounded-lg text-slate-300 cursor-pointer shrink-0"
+                  aria-label="Toggle navigation menu"
                 >
-                  {isMobileMenuOpen ? <X size={20} /> : <Menu size={20} />}
+                  {isMobileMenuOpen ? <X size={18} /> : <Menu size={18} />}
                 </button>
               )}
             </div>
           </div>
 
-          {/* Mobile-only Search Bar (Admin View) */}
+          {/* Full-width Responsive Role Switcher Segmented Control for Mobile & Tablet (< lg) */}
+          <div className="lg:hidden w-full pt-0.5">
+            <div className="grid grid-cols-4 gap-1 p-0.5 rounded-xl border border-blue-900/40 bg-slate-950/80 text-xs shadow-inner w-full">
+              <button
+                onClick={() => { setCurrentRole('congregant'); setActiveTab('home'); }}
+                className={`py-1.5 px-1 rounded-lg font-bold flex items-center justify-center gap-1 transition cursor-pointer text-[9px] sm:text-[10px] uppercase tracking-wider ${currentRole === 'congregant' ? 'bg-amber-400 text-slate-950 shadow-xs' : 'text-slate-300 hover:text-white hover:bg-white/5'}`}
+              >
+                <Compass size={11} className="shrink-0" />
+                <span className="truncate">Congregant</span>
+              </button>
+              <button
+                onClick={() => { setCurrentRole('usher'); }}
+                className={`py-1.5 px-1 rounded-lg font-bold flex items-center justify-center gap-1 transition cursor-pointer text-[9px] sm:text-[10px] uppercase tracking-wider ${currentRole === 'usher' ? 'bg-amber-400 text-slate-950 shadow-xs' : 'text-slate-300 hover:text-white hover:bg-white/5'}`}
+              >
+                <UserCheck size={11} className="shrink-0" />
+                <span className="truncate">Usher</span>
+              </button>
+              <button
+                onClick={() => { setCurrentRole('pastor'); }}
+                className={`py-1.5 px-1 rounded-lg font-bold flex items-center justify-center gap-1 transition cursor-pointer text-[9px] sm:text-[10px] uppercase tracking-wider ${currentRole === 'pastor' ? 'bg-amber-400 text-slate-950 shadow-xs' : 'text-slate-300 hover:text-white hover:bg-white/5'}`}
+              >
+                <BookOpen size={11} className="shrink-0" />
+                <span className="truncate">Pastor</span>
+              </button>
+              <button
+                onClick={() => { setCurrentRole('admin'); setActiveTab('dashboard'); }}
+                className={`py-1.5 px-1 rounded-lg font-bold flex items-center justify-center gap-1 transition cursor-pointer text-[9px] sm:text-[10px] uppercase tracking-wider ${currentRole === 'admin' ? 'bg-amber-400 text-slate-950 shadow-xs' : 'text-slate-300 hover:text-white hover:bg-white/5'}`}
+              >
+                <ShieldCheck size={11} className="shrink-0" />
+                <span className="truncate">Admin</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Mobile & Tablet Search Bar (Admin View - < xl screens) */}
           {currentRole === 'admin' && (
-            <div className="block md:hidden w-full pb-0.5">
+            <div className="block xl:hidden w-full pt-0.5 pb-0.5">
               <GlobalSearch 
                 members={members}
                 prayerRequests={prayerRequests}
