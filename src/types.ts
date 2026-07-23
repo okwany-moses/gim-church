@@ -39,6 +39,7 @@ export interface Contribution {
   type: string; // 'Tithe', 'Offering', 'Building Fund', 'Missions', 'Benevolence'
   date: string;
   payment_method: string; // 'M-Pesa', 'Cash', 'Bank Transfer', 'Cheque'
+  branch_id?: number | null;
   branch_name?: string;
   cell_group_id?: number | null;
   cell_group_name?: string;

@@ -237,12 +237,17 @@ app.get('/api/contributions', async (req, res) => {
   try {
     const db = await getDb();
     const contributions = await db.all(`
-      SELECT c.*, m.name as member_name, b.name as branch_name,
-             COALESCE(cg.name, cg_member.name) as cell_group_name
+      SELECT c.*, 
+             COALESCE(c.member_name, m.name, 'Anonymous') as member_name, 
+             COALESCE(b_direct.name, b_member.name) as branch_name,
+             COALESCE(c.branch_id, m.branch_id) as branch_id,
+             COALESCE(cg_direct.name, cg_member.name) as cell_group_name,
+             COALESCE(c.cell_group_id, m.cell_group_id) as cell_group_id
       FROM contributions c
       LEFT JOIN members m ON c.member_id = m.id
-      LEFT JOIN branches b ON m.branch_id = b.id
-      LEFT JOIN cell_groups cg ON c.cell_group_id = cg.id
+      LEFT JOIN branches b_direct ON c.branch_id = b_direct.id
+      LEFT JOIN branches b_member ON m.branch_id = b_member.id
+      LEFT JOIN cell_groups cg_direct ON c.cell_group_id = cg_direct.id
       LEFT JOIN cell_groups cg_member ON m.cell_group_id = cg_member.id
       ORDER BY c.date DESC
     `);
@@ -255,16 +260,16 @@ app.get('/api/contributions', async (req, res) => {
 app.post('/api/contributions', async (req, res) => {
   try {
     const db = await getDb();
-    const { member_id, member_name, amount, type, date, payment_method, cell_group_id } = req.body;
+    const { member_id, member_name, amount, type, date, payment_method, branch_id, cell_group_id } = req.body;
     
     if (!amount) {
       return res.status(400).json({ error: 'Amount is required' });
     }
 
     const result = await db.run(`
-      INSERT INTO contributions (member_id, member_name, amount, type, date, payment_method, cell_group_id)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `, [member_id || null, member_name || 'Anonymous', amount, type || 'Tithe', date || new Date().toISOString().split('T')[0], payment_method || 'M-Pesa', cell_group_id || null]);
+      INSERT INTO contributions (member_id, member_name, amount, type, date, payment_method, branch_id, cell_group_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `, [member_id || null, member_name || 'Anonymous', amount, type || 'Tithe', date || new Date().toISOString().split('T')[0], payment_method || 'M-Pesa', branch_id || null, cell_group_id || null]);
 
     res.status(201).json({ id: result.lastID });
   } catch (error: any) {
@@ -276,13 +281,13 @@ app.put('/api/contributions/:id', async (req, res) => {
   try {
     const db = await getDb();
     const { id } = req.params;
-    const { member_id, member_name, amount, type, date, payment_method, cell_group_id } = req.body;
+    const { member_id, member_name, amount, type, date, payment_method, branch_id, cell_group_id } = req.body;
 
     await db.run(`
       UPDATE contributions
-      SET member_id = ?, member_name = ?, amount = ?, type = ?, date = ?, payment_method = ?, cell_group_id = ?
+      SET member_id = ?, member_name = ?, amount = ?, type = ?, date = ?, payment_method = ?, branch_id = ?, cell_group_id = ?
       WHERE id = ?
-    `, [member_id || null, member_name || 'Anonymous', amount, type, date, payment_method, cell_group_id || null, id]);
+    `, [member_id || null, member_name || 'Anonymous', amount, type, date, payment_method, branch_id || null, cell_group_id || null, id]);
 
     res.json({ success: true });
   } catch (error: any) {

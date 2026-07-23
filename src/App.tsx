@@ -1055,6 +1055,7 @@ export default function App() {
                       expenditures={expenditures}
                       members={members}
                       cellGroups={cellGroups}
+                      branches={branches}
                       onRefresh={loadAllData}
                       onAddContribution={handleAddContribution}
                       onDeleteContribution={handleDeleteContribution}

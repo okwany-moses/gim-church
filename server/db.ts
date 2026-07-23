@@ -426,8 +426,10 @@ async function initDb(db: CompatDatabase) {
       type TEXT NOT NULL, -- Tithe, Offering, Building Fund, Missions, Benevolence
       date TEXT NOT NULL,
       payment_method TEXT NOT NULL, -- M-Pesa, Cash, Bank Transfer, Cheque
+      branch_id INTEGER,
       cell_group_id INTEGER,
       FOREIGN KEY(member_id) REFERENCES members(id) ON DELETE SET NULL,
+      FOREIGN KEY(branch_id) REFERENCES branches(id) ON DELETE SET NULL,
       FOREIGN KEY(cell_group_id) REFERENCES cell_groups(id) ON DELETE SET NULL
     );
 
@@ -864,6 +866,13 @@ async function initDb(db: CompatDatabase) {
   // Safe migration for contributions cell_group_id column
   try {
     await db.run("ALTER TABLE contributions ADD COLUMN cell_group_id INTEGER");
+  } catch (err) {
+    // Column already exists, ignore
+  }
+
+  // Safe migration for contributions branch_id column
+  try {
+    await db.run("ALTER TABLE contributions ADD COLUMN branch_id INTEGER");
   } catch (err) {
     // Column already exists, ignore
   }

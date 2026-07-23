@@ -16,7 +16,11 @@ import {
   HelpCircle,
   BarChart2,
   Calendar,
-  Printer
+  Printer,
+  Building,
+  MapPin,
+  Users,
+  Filter
 } from 'lucide-react';
 import Papa from 'papaparse';
 import ConfirmModal from './ConfirmModal.js';
@@ -33,13 +37,14 @@ import {
   Tooltip, 
   Legend 
 } from 'recharts';
-import { Contribution, Expenditure, Member, CellGroup } from '../types.js';
+import { Contribution, Expenditure, Member, CellGroup, Branch } from '../types.js';
 
 interface AdminFinancesProps {
   contributions: Contribution[];
   expenditures: Expenditure[];
   members: Member[];
   cellGroups: CellGroup[];
+  branches?: Branch[];
   onRefresh: () => void;
   onAddContribution: (contrib: Partial<Contribution>) => Promise<any>;
   onDeleteContribution: (id: number) => Promise<any>;
@@ -60,6 +65,7 @@ export default function AdminFinances({
   expenditures,
   members,
   cellGroups,
+  branches = [],
   onRefresh,
   onAddContribution,
   onDeleteContribution,
@@ -91,6 +97,8 @@ export default function AdminFinances({
   const [incomeSearch, setIncomeSearch] = useState('');
   const [incomeTypeFilter, setIncomeTypeFilter] = useState('All');
   const [incomeMethodFilter, setIncomeMethodFilter] = useState('All');
+  const [incomeBranchFilter, setIncomeBranchFilter] = useState('All');
+  const [incomeCellGroupFilter, setIncomeCellGroupFilter] = useState('All');
   const [selectedIncomeIds, setSelectedIncomeIds] = useState<number[]>([]);
 
   // Expenses State
@@ -112,6 +120,7 @@ export default function AdminFinances({
   const [incomeDate, setIncomeDate] = useState(new Date().toISOString().split('T')[0]);
   const [incomeMethod, setIncomeMethod] = useState('M-Pesa');
   const [incomeError, setIncomeError] = useState('');
+  const [incomeBranchId, setIncomeBranchId] = useState('');
   const [incomeCellGroupId, setIncomeCellGroupId] = useState('');
 
   // Auto-suggest fee amounts based on family role
@@ -142,18 +151,66 @@ export default function AdminFinances({
     }
   }, [selectedMember, incomeType, isAnonymous]);
 
-  // Auto-fill cell group based on selected member
+  // Auto-fill branch & cell group based on selected member
   React.useEffect(() => {
     if (!isAnonymous && selectedMember) {
+      if (selectedMember.branch_id) {
+        setIncomeBranchId(selectedMember.branch_id.toString());
+      } else {
+        setIncomeBranchId('');
+      }
       if (selectedMember.cell_group_id) {
         setIncomeCellGroupId(selectedMember.cell_group_id.toString());
       } else {
         setIncomeCellGroupId('');
       }
     } else {
+      setIncomeBranchId('');
       setIncomeCellGroupId('');
     }
   }, [selectedMember, isAnonymous]);
+
+  // Filter cell groups available for the filter dropdown
+  const cellGroupsForFilter = cellGroups.filter(cg => {
+    if (incomeBranchFilter === 'All') return true;
+    const branchMatch = branches.find(b => b.name === incomeBranchFilter || b.id.toString() === incomeBranchFilter);
+    if (!branchMatch) return true;
+    return cg.branch_id === branchMatch.id || cg.branch_name === branchMatch.name;
+  });
+
+  // Matching helper function for contributions by Branch & Cell Group
+  const matchesBranchAndCell = (c: Contribution) => {
+    let matchesBranch = true;
+    if (incomeBranchFilter !== 'All') {
+      matchesBranch = c.branch_name === incomeBranchFilter || 
+                      (c.branch_id != null && c.branch_id.toString() === incomeBranchFilter);
+    }
+
+    let matchesCellGroup = true;
+    if (incomeCellGroupFilter !== 'All') {
+      matchesCellGroup = c.cell_group_name === incomeCellGroupFilter || 
+                         (c.cell_group_id != null && c.cell_group_id.toString() === incomeCellGroupFilter);
+    }
+
+    return matchesBranch && matchesCellGroup;
+  };
+
+  // Matching helper function for members by Branch & Cell Group
+  const matchesMemberBranchAndCell = (m: Member) => {
+    let matchesBranch = true;
+    if (incomeBranchFilter !== 'All') {
+      matchesBranch = m.branch_name === incomeBranchFilter || 
+                      (m.branch_id != null && m.branch_id.toString() === incomeBranchFilter);
+    }
+
+    let matchesCellGroup = true;
+    if (incomeCellGroupFilter !== 'All') {
+      matchesCellGroup = m.cell_group_name === incomeCellGroupFilter || 
+                         (m.cell_group_id != null && m.cell_group_id.toString() === incomeCellGroupFilter);
+    }
+
+    return matchesBranch && matchesCellGroup;
+  };
 
   // Expense Form Fields
   const [expenseCategory, setExpenseCategory] = useState('Utilities');
@@ -166,8 +223,10 @@ export default function AdminFinances({
   const incomeFileInputRef = useRef<HTMLInputElement>(null);
   const expenseFileInputRef = useRef<HTMLInputElement>(null);
 
-  // Financial Calculations
-  const totalRevenue = contributions.reduce((sum, item) => sum + item.amount, 0);
+  // Financial Calculations for Ledger Summary (Filtered by Branch & Cell Group)
+  const ledgerContributions = contributions.filter(matchesBranchAndCell);
+
+  const totalRevenue = ledgerContributions.reduce((sum, item) => sum + item.amount, 0);
   const totalExpenses = expenditures.reduce((sum, item) => sum + item.amount, 0);
   const netBalance = totalRevenue - totalExpenses;
 
@@ -175,24 +234,24 @@ export default function AdminFinances({
     return new Intl.NumberFormat('en-KE', { style: 'currency', currency: 'KES', maximumFractionDigits: 0 }).format(val);
   };
 
-  // Dues & Registration Tracker calculations
-  const activeMembers = members.filter(m => m.status === 'Active');
+  // Dues & Registration Tracker calculations (Filtered by Branch & Cell Group)
+  const activeMembers = members.filter(m => m.status === 'Active' && matchesMemberBranchAndCell(m));
   const adultMembers = activeMembers.filter(m => m.family_role === 'Father' || m.family_role === 'Mother' || m.family_role === 'Single');
   const youthMembers = activeMembers.filter(m => m.family_role === 'Youth');
   const childMembers = activeMembers.filter(m => m.family_role === 'Child');
 
   const expectedRegistrationYearly = (adultMembers.length * 200) + (youthMembers.length * 100) + (childMembers.length * 50);
-  const registrationFeesCollected = contributions
+  const registrationFeesCollected = ledgerContributions
     .filter(c => c.type === 'Registration Fee')
     .reduce((sum, item) => sum + item.amount, 0);
 
-  const monthlyContributionsCollected = contributions
+  const monthlyContributionsCollected = ledgerContributions
     .filter(c => c.type === 'Monthly Contribution')
     .reduce((sum, item) => sum + item.amount, 0);
 
   // Build chart structures
   const incomeByTypeData = Object.entries(
-    contributions.reduce((acc, c) => {
+    ledgerContributions.reduce((acc, c) => {
       acc[c.type] = (acc[c.type] || 0) + c.amount;
       return acc;
     }, {} as Record<string, number>)
@@ -205,17 +264,19 @@ export default function AdminFinances({
     }, {} as Record<string, number>)
   ).map(([name, value]) => ({ name, value }));
 
-  // Filter incomes
+  // Filter incomes for Incomes Subtab
   const filteredContributions = contributions.filter(c => {
     const matchesSearch = 
       (c.member_name || 'Anonymous').toLowerCase().includes(incomeSearch.toLowerCase()) ||
       c.type.toLowerCase().includes(incomeSearch.toLowerCase()) ||
-      c.payment_method.toLowerCase().includes(incomeSearch.toLowerCase());
+      c.payment_method.toLowerCase().includes(incomeSearch.toLowerCase()) ||
+      (c.branch_name || '').toLowerCase().includes(incomeSearch.toLowerCase()) ||
+      (c.cell_group_name || '').toLowerCase().includes(incomeSearch.toLowerCase());
 
     const matchesType = incomeTypeFilter === 'All' || c.type === incomeTypeFilter;
     const matchesMethod = incomeMethodFilter === 'All' || c.payment_method === incomeMethodFilter;
 
-    return matchesSearch && matchesType && matchesMethod;
+    return matchesSearch && matchesType && matchesMethod && matchesBranchAndCell(c);
   });
 
   // Filter expenses
@@ -254,6 +315,7 @@ export default function AdminFinances({
       type: incomeType,
       date: incomeDate || new Date().toISOString().split('T')[0],
       payment_method: incomeMethod,
+      branch_id: incomeBranchId ? parseInt(incomeBranchId, 10) : null,
       cell_group_id: incomeCellGroupId ? parseInt(incomeCellGroupId, 10) : null
     };
 
@@ -264,6 +326,7 @@ export default function AdminFinances({
       setSelectedMember(null);
       setMemberSearchTerm('');
       setIncomeAmount('');
+      setIncomeBranchId('');
       setIncomeCellGroupId('');
       setIsAnonymous(false);
       onRefresh();
@@ -518,6 +581,71 @@ export default function AdminFinances({
       {/* 1. LEDGER SUMMARY TAB */}
       {activeSubTab === 'ledger' && (
         <div className="space-y-6">
+          {/* Branch & Cell Group Filter Control Bar */}
+          <div className="bg-white border border-slate-200 rounded-xl p-3.5 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-lg bg-blue-50 border border-blue-100 flex items-center justify-center text-blue-600 shrink-0">
+                <Building size={16} />
+              </div>
+              <div>
+                <span className="text-[10px] font-extrabold uppercase tracking-widest text-slate-400 block leading-none">Ledger Scope & Filtering</span>
+                <h3 className="text-xs font-bold text-slate-800">Filter Ledger by Branch & Cell Group</h3>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              {/* Branch Filter Dropdown */}
+              <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 px-2.5 py-1.5 rounded-lg text-xs">
+                <MapPin size={13} className="text-blue-600 shrink-0" />
+                <span className="font-semibold text-slate-500 text-[11px] hidden sm:inline">Branch:</span>
+                <select
+                  value={incomeBranchFilter}
+                  onChange={(e) => {
+                    setIncomeBranchFilter(e.target.value);
+                    setIncomeCellGroupFilter('All');
+                  }}
+                  className="bg-transparent text-slate-800 font-bold text-xs focus:outline-hidden cursor-pointer"
+                >
+                  <option value="All">All Parishes / Branches</option>
+                  {branches.map(b => (
+                    <option key={b.id} value={b.name}>{b.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Cell Group Filter Dropdown */}
+              <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 px-2.5 py-1.5 rounded-lg text-xs">
+                <Users size={13} className="text-amber-600 shrink-0" />
+                <span className="font-semibold text-slate-500 text-[11px] hidden sm:inline">Cell Group:</span>
+                <select
+                  value={incomeCellGroupFilter}
+                  onChange={(e) => setIncomeCellGroupFilter(e.target.value)}
+                  className="bg-transparent text-slate-800 font-bold text-xs focus:outline-hidden cursor-pointer"
+                >
+                  <option value="All">All Cell Fellowships</option>
+                  {cellGroupsForFilter.map(cg => (
+                    <option key={cg.id} value={cg.name}>
+                      {cg.name} {cg.branch_name ? `(${cg.branch_name})` : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {(incomeBranchFilter !== 'All' || incomeCellGroupFilter !== 'All') && (
+                <button
+                  onClick={() => {
+                    setIncomeBranchFilter('All');
+                    setIncomeCellGroupFilter('All');
+                  }}
+                  className="px-2.5 py-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-bold transition cursor-pointer flex items-center gap-1"
+                >
+                  <X size={13} />
+                  <span>Reset Filters</span>
+                </button>
+              )}
+            </div>
+          </div>
+
           {/* Quick Stats Rows */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div className="bg-emerald-50 border border-emerald-100 p-6 rounded-xl space-y-1">
@@ -719,6 +847,35 @@ export default function AdminFinances({
                 <option value="Benevolence">Benevolence</option>
                 <option value="Registration Fee">Registration Fee</option>
                 <option value="Monthly Contribution">Monthly Contribution</option>
+              </select>
+
+              {/* Branch Filter */}
+              <select
+                value={incomeBranchFilter}
+                onChange={(e) => {
+                  setIncomeBranchFilter(e.target.value);
+                  setIncomeCellGroupFilter('All');
+                }}
+                className="py-1.5 px-3 border border-slate-200 rounded-lg text-xs text-slate-700 bg-white"
+              >
+                <option value="All">All Parishes / Branches</option>
+                {branches.map(b => (
+                  <option key={b.id} value={b.name}>{b.name}</option>
+                ))}
+              </select>
+
+              {/* Cell Group Filter */}
+              <select
+                value={incomeCellGroupFilter}
+                onChange={(e) => setIncomeCellGroupFilter(e.target.value)}
+                className="py-1.5 px-3 border border-slate-200 rounded-lg text-xs text-slate-700 bg-white"
+              >
+                <option value="All">All Cell Groups</option>
+                {cellGroupsForFilter.map(cg => (
+                  <option key={cg.id} value={cg.name}>
+                    {cg.name} {cg.branch_name ? `(${cg.branch_name})` : ''}
+                  </option>
+                ))}
               </select>
             </div>
 
@@ -1216,6 +1373,20 @@ export default function AdminFinances({
                     <option value="Cash">Cash</option>
                     <option value="Bank Transfer">Bank Transfer</option>
                     <option value="Cheque">Cheque</option>
+                  </select>
+                </div>
+
+                <div className="col-span-2 space-y-1">
+                  <label className="text-xs font-semibold text-slate-600">Branch / Parish Affiliation (Optional)</label>
+                  <select
+                    value={incomeBranchId}
+                    onChange={(e) => setIncomeBranchId(e.target.value)}
+                    className="w-full border border-slate-200 rounded-lg p-2 text-xs text-slate-700 bg-white"
+                  >
+                    <option value="">-- Select Branch / Parish --</option>
+                    {branches.map(b => (
+                      <option key={b.id} value={b.id}>{b.name}</option>
+                    ))}
                   </select>
                 </div>
 
